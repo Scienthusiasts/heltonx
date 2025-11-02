@@ -35,7 +35,7 @@ class Trainer():
                 optimizer_cfgs:     和优化器有关的配置参数
                 scheduler_cfgs:     和学习率衰减策略有关的配置参数
                 grad_accumulate:    是否开启梯度累加策略(不额外增加显存占用, 增大bs)
-                grad_clip:          梯度裁剪, 训练LLM时通常搭配grad_accumulate使用, 避免梯度爆炸
+                grad_clip:          梯度裁剪, 训练LLM时通常使用, 避免梯度爆炸
         """
         self.mode = mode
         self.log_dir = log_dir

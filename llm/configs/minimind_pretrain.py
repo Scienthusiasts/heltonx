@@ -14,9 +14,9 @@ log_interval = 50
 eval_interval = 1
 resume = None
 # 梯度累加策略, bs等效于 bs*grad_accumulate
-grad_accumulate=4
+grad_accumulate=None
 # 梯度裁剪策略
-grad_clip=1
+grad_clip=1.0
 
 
 

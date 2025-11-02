@@ -7,11 +7,11 @@ from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
 
 
 @MODELS.register
-class PretrainLLM(nn.Module):
+class SFTLLM(nn.Module):
     def __init__(self, load_ckpt, llm:nn.Module, loss:nn.Module):
-        """预训练LLM(用于实现针对LLM的预训练逻辑, 本质只是一个套壳, 核心的模型还是self.llm)
+        """有监督微调LLM(用于实现针对LLM的SFT逻辑, 本质只是一个套壳, 核心的模型还是self.llm)
         """
-        super(PretrainLLM, self).__init__()
+        super(SFTLLM, self).__init__()
         # 模型
         self.llm = llm
         # 损失
@@ -22,7 +22,7 @@ class PretrainLLM(nn.Module):
 
     
     def forward(self, batch_datas, return_loss=True):
-        """预训练pipeline
+        """sft pipeline
         """
         # X, Y, loss_mask = [bs, seq_lens]
         X, Y, loss_mask = batch_datas[0], batch_datas[1], batch_datas[2]

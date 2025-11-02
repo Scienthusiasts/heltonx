@@ -56,6 +56,7 @@ class PretrainDataset(Dataset):
     def __getitem__(self, index):
         """
         """
+        # 一行text格式: "<|im_start|> 文本1 <|im_end|>...<|im_start|> 文本n <|im_end|>"
         text = str(self.samples[index]["text"])
         # 构建输入文本, 并将文本进行分词
         enc = self.tokenizer(
