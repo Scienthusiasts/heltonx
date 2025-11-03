@@ -23,10 +23,11 @@ def init_model(device, weight_dir):
 
 def main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    # load_from = './ckpts/hugging_face/Qwen-0.6B'
-    load_from = './ckpts/hugging_face/MiniMind2-R1'
+    # load_from = 'F:\Desktop\git\minimind\Qwen-4B-Instruct'
+    load_from = 'F:\Desktop\git\minimind\Qwen-0.6B'
+    # load_from = './ckpts/hugging_face/MiniMind2-R1'
     historys = 0
-    seed_everything(42) 
+    # seed_everything(42) 
 
     # 初始化对话存储列表，用于存储上下文历史
     conversation = []
@@ -43,7 +44,29 @@ def main():
         # 在每次构造 templates 前都保证 system 存在一次
         system_prompt = {
             "role": "system", 
-            "content": "你是一个由YHT开发的人工智能助手, 你需要记住你的名字叫做HeltonLM, 你需要尽可能的分析用户提出的需求，并给出完美的回答，记住，当问题比较复杂时你应该尽可能的举一个生动形象的例子"
+            "content": 
+                    # """
+                    #     你是一个智能旅行助手。你的任务是分析用户的请求，并使用可用工具一步步地解决问题。
+
+                    #     # 可用工具:
+                    #     - `get_weather(city: str)`: 查询指定城市的实时天气。
+                    #     - `get_attraction(city: str)`: 根据城市搜索推荐的旅游景点。
+                    #     - `get_time(city: str, weather: str)`: 根据城市查询当前时间(包含年月日小时分钟秒)。
+                    #     - `get_path(start: str, end: str)`: 查询起始地到目的地的导航路线
+                        
+                    #     # 行动格式:
+                    #     你的回答必须严格遵循以下格式。首先是你的思考过程，然后是你要执行的具体行动。
+                    #     Thought: [这里是你的思考过程和下一步计划]
+                    #     Action: [这里是你要调用的工具，格式为 function_name(arg_name="arg_value")]
+
+                    #     # 任务完成:
+                    #     当你收集到足够的信息，能够回答用户的最终问题时，你必须使用 `finish(answer="...")` 来输出最终答案。
+
+                    #     请开始吧！
+                    # """
+                    """
+                        你是一个可靠的智能助手, 请尽量以直白且生动形象的语言回答用户提出的问题, 在必要的时候, 你可以举个例子
+                    """
         }
         if not conversation or conversation[0].get("role") != "system":
             conversation.insert(0, system_prompt)
@@ -55,9 +78,9 @@ def main():
             "tokenize": False, 
             "add_generation_prompt": True,
             # 是否开启CoT
-            "enable_thinking": True
+            "enable_thinking": False
         }
-        # 将模板转换成可供模型输入的字符串
+        # 根据模板的参数将模板转换成可供模型输入的字符串
         inputs = tokenizer.apply_chat_template(**templates)
         # 使用tokenizer将文本转换为模型输入（token ids、attention mask）
         # truncation=True 保证输入不过长

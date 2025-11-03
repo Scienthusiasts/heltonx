@@ -10,6 +10,7 @@ from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
 class PretrainLLM(nn.Module):
     def __init__(self, load_ckpt, llm:nn.Module, loss:nn.Module):
         """预训练LLM(用于实现针对LLM的预训练逻辑, 本质只是一个套壳, 核心的模型还是self.llm)
+           Pretrain本质是在训练模型的文本补全能力, 训练出来的模型不具备对话能力, 还得经过Instruct-Tuning
         """
         super(PretrainLLM, self).__init__()
         # 模型

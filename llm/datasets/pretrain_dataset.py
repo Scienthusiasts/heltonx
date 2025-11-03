@@ -15,19 +15,17 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 @DATASETS.register
 class PretrainDataset(Dataset):
-    def __init__(self, json_data_path, huggingface_weights_dir, max_length=512):
+    def __init__(self, json_data_path, tokenizer_cfg_dir, max_length=512):
         """预训练数据集, 从 jsonl 文件中读取每一行的 {"text": "..."} 数据;
-           使用预训练分词器将文本转成 token ids
-           构造自回归训练输入 (X) 和标签 (Y)
             Args:
                 json_data_path:          数据集json文件
-                huggingface_weights_dir: 模型权重(hf格式)
+                tokenizer_cfg_dir: 模型权重(hf格式)
                 max_length:              数据的最大序列长度, 超过会截断, 不足会填充 PAD
         """
         super().__init__()
         # 加载训练好的 HuggingFace 格式的 tokenizer，用于把文本转成 token ids
         # tokenizer 内部包含词表 / 特殊 token / 编码规则等元数据
-        self.tokenizer = AutoTokenizer.from_pretrained(huggingface_weights_dir)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_cfg_dir)
         self.max_length = max_length
         # 读取所有 json 数据行（每行是 {"text": "..."}）
         self.samples = self.load_data(json_data_path)
@@ -54,7 +52,8 @@ class PretrainDataset(Dataset):
 
 
     def __getitem__(self, index):
-        """
+        """使用预训练分词器将文本转成 token ids
+           构造自回归训练输入 (X) 和标签 (Y)
         """
         # 一行text格式: "<|im_start|> 文本1 <|im_end|>...<|im_start|> 文本n <|im_end|>"
         text = str(self.samples[index]["text"])
@@ -103,9 +102,9 @@ class PretrainDataset(Dataset):
 
 if __name__ == "__main__":
     json_data_path = '/data/yht/data/llm/pretrain_hq.jsonl'
-    huggingface_weights_dir = 'ckpts/hugging_face/Qwen-0.6B'
+    tokenizer_cfg_dir = 'ckpts/hugging_face/Qwen-0.6B'
 
-    dataset = PretrainDataset(json_data_path, huggingface_weights_dir)
+    dataset = PretrainDataset(json_data_path, tokenizer_cfg_dir)
     train_data_loader = DataLoader(dataset=dataset, batch_size=32, shuffle=True, num_workers=8, collate_fn=dataset.dataset_collate, worker_init_fn=partial(worker_init_fn, seed=42))
     # 输出数据格式
     for epoch in range(1):

@@ -1,15 +1,16 @@
-json_data_path = '/data/yht/data/llm/sft_512.jsonl'
-huggingface_weights_dir = 'ckpts/hugging_face/MiniMind2-R1'
+json_data_path = '/data/yht/data/llm/r1_mix_1024.jsonl'
+tokenizer_cfg_dir = '/data/yht/code/HeltonPretrain/llm/tokenizer_configs/minimind2'
+vocab_size = 6400
 
 mode = 'train_ddp'
 seed = 42
-log_dir = r'./log/llm/minimind_sft512'
-epoch = 4
-bs = 32
-lr = 5e-6
-warmup_lr = 4e-6
+log_dir = r'./log/llm/minimind_sft512_cot'
+epoch = 12
+bs = 16
+lr = 5e-7
+warmup_lr = 4e-7
 lr_decay = 5e-1
-load_ckpt = '/data/yht/code/HeltonPretrain/log/llm/minimind_pretrain/2025-11-01-21-09-40_train_ddp/last.pt'
+load_ckpt = '/data/yht/code/HeltonPretrain/log/llm/minimind_sft512/2025-11-02-13-46-32_train_ddp/last.pt'
 log_interval = 50
 eval_interval = 1
 resume = None
@@ -29,7 +30,7 @@ model_cfgs = dict(
         config=dict(
             hidden_size=768,      # tokens维度
             num_hidden_layers=16, # transformer 堆叠层数
-            vocab_size=6400,      # 使用的词表的大小(单词数)
+            vocab_size=vocab_size,# 使用的词表的大小(单词数)
             use_moe=False, 
             inference_rope_scaling=False,
         ),
@@ -45,8 +46,10 @@ dataset_cfgs=dict(
     train_dataset_cfg=dict(
         type="SFTDataset",
         json_data_path=json_data_path, 
-        huggingface_weights_dir=huggingface_weights_dir, 
-        max_length=512
+        tokenizer_cfg_dir=tokenizer_cfg_dir, 
+        max_length=1024,
+        has_CoT=True, 
+        special_tokens_weight=10
     ),
     valid_dataset_cfg=None,
     train_bs=bs,

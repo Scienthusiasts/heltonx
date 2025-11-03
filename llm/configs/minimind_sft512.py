@@ -1,16 +1,16 @@
-json_data_path = '/data/yht/data/llm/pretrain_hq.jsonl'
+json_data_path = '/data/yht/data/llm/sft_512.jsonl'
 tokenizer_cfg_dir = '/data/yht/code/HeltonPretrain/llm/tokenizer_configs/minimind2'
 vocab_size = 6400
 
 mode = 'train_ddp'
 seed = 42
-log_dir = r'./log/llm/minimind_pretrain'
-epoch = 12
+log_dir = r'./log/llm/minimind_sft512'
+epoch = 4
 bs = 32
-lr = 5e-4
-warmup_lr = 1e-5
-lr_decay = 1e-1
-load_ckpt = None
+lr = 5e-6
+warmup_lr = 4e-6
+lr_decay = 5e-1
+load_ckpt = '/data/yht/code/HeltonPretrain/log/llm/minimind_pretrain/2025-11-01-21-09-40_train_ddp/last.pt'
 log_interval = 50
 eval_interval = 1
 resume = None
@@ -23,7 +23,7 @@ grad_clip=1.0
 
 '''模型配置参数'''
 model_cfgs = dict(
-    type="PretrainLLM",
+    type="SFTLLM",
     load_ckpt=load_ckpt, 
     llm=dict(
         type="MiniMindForCausalLM",
@@ -44,7 +44,7 @@ model_cfgs = dict(
 '''数据集配置参数'''
 dataset_cfgs=dict(
     train_dataset_cfg=dict(
-        type="PretrainDataset",
+        type="SFTDataset",
         json_data_path=json_data_path, 
         tokenizer_cfg_dir=tokenizer_cfg_dir, 
         max_length=512

@@ -10,6 +10,7 @@ from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
 class SFTLLM(nn.Module):
     def __init__(self, load_ckpt, llm:nn.Module, loss:nn.Module):
         """有监督微调LLM(用于实现针对LLM的SFT逻辑, 本质只是一个套壳, 核心的模型还是self.llm)
+           Instruct-Tuning, CoT-Tuning本质都是SFT, 均适用该类
         """
         super(SFTLLM, self).__init__()
         # 模型
@@ -22,7 +23,7 @@ class SFTLLM(nn.Module):
 
     
     def forward(self, batch_datas, return_loss=True):
-        """sft pipeline
+        """sft pipeline (和pretrain pipeline完全一致)
         """
         # X, Y, loss_mask = [bs, seq_lens]
         X, Y, loss_mask = batch_datas[0], batch_datas[1], batch_datas[2]

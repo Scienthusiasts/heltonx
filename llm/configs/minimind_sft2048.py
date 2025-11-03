@@ -1,21 +1,21 @@
-json_data_path = '/data/yht/data/llm/pretrain_hq.jsonl'
+json_data_path = '/data/yht/data/llm/sft_2048.jsonl'
 tokenizer_cfg_dir = '/data/yht/code/HeltonPretrain/llm/tokenizer_configs/minimind2'
 vocab_size = 6400
 
 mode = 'train_ddp'
 seed = 42
-log_dir = r'./log/llm/minimind_pretrain'
-epoch = 12
-bs = 32
-lr = 5e-4
-warmup_lr = 1e-5
-lr_decay = 1e-1
-load_ckpt = None
+log_dir = r'./log/llm/minimind_sft2048'
+epoch = 4
+bs = 16
+lr = 5e-7
+warmup_lr = 4e-7
+lr_decay = 5e-1
+load_ckpt = '/data/yht/code/HeltonPretrain/log/llm/minimind_sft512/2025-11-02-13-46-32_train_ddp/last.pt'
 log_interval = 50
 eval_interval = 1
 resume = None
 # 梯度累加策略, bs等效于 bs*grad_accumulate
-grad_accumulate=None
+grad_accumulate=2
 # 梯度裁剪策略
 grad_clip=1.0
 
@@ -23,7 +23,7 @@ grad_clip=1.0
 
 '''模型配置参数'''
 model_cfgs = dict(
-    type="PretrainLLM",
+    type="SFTLLM",
     load_ckpt=load_ckpt, 
     llm=dict(
         type="MiniMindForCausalLM",
@@ -44,10 +44,10 @@ model_cfgs = dict(
 '''数据集配置参数'''
 dataset_cfgs=dict(
     train_dataset_cfg=dict(
-        type="PretrainDataset",
+        type="SFTDataset",
         json_data_path=json_data_path, 
         tokenizer_cfg_dir=tokenizer_cfg_dir, 
-        max_length=512
+        max_length=1024
     ),
     valid_dataset_cfg=None,
     train_bs=bs,

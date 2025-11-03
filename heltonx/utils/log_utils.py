@@ -341,7 +341,7 @@ class RunnerLogger:
         # 记录每次iter耗时
         self.interval_time = time.time() - self.last_time
         self.last_time = time.time()
-        eta_hours = (self.total_iters - step) * self.interval_time / 3600
+        eta_hours = (self.total_iters - step - (epoch-1) * self.batch_num) * self.interval_time / 3600
         eta_mins = (eta_hours - int(eta_hours)) * 60
         '''记录'''
         current_lr = optimizer.param_groups[0]['lr']
