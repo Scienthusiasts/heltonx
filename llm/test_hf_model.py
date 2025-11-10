@@ -5,36 +5,30 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, TextStreamer
 from heltonx.utils.utils import seed_everything
+from heltonx.utils.register import MODELS
 
-
-
-def init_model(device, weight_dir):
-    """加载模型与分词器(加载huggingface, transformer库的格式的模型)
-    """
-    # AutoTokenizer 会根据模型名称自动选择正确的分词规则（例如BPE、SentencePiece）
-    tokenizer = AutoTokenizer.from_pretrained(weight_dir)
-    # # 加载语言模型, 使用transformer库自动进行配置(符合现有开源大模型的标准, 可以直接导入huggingfave上的llm模型)
-    # trust_remote_code=True 表示允许加载远程仓库中自定义的模型代码（有时非官方模型需要）
-    model = AutoModelForCausalLM.from_pretrained(weight_dir, trust_remote_code=True)
-    print(f'模型参数: {sum(p.numel() for p in model.parameters()) / 1e6:.2f} M(illion)')
-    return model.eval().to(device), tokenizer
 
 
 
 def main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    # load_from = 'F:\Desktop\git\minimind\Qwen-4B-Instruct'
-    load_from = 'F:\Desktop\git\minimind\Qwen-0.6B'
-    # load_from = './ckpts/hugging_face/MiniMind2-R1'
+    load_from = 'ckpts/hugging_face/Qwen-0.6B'
     historys = 0
-    # seed_everything(42) 
-
+    llm_cfg = dict(
+        type='AutoModelForCausalLM',
+        weight_dir = load_from
+    )
+    tokenizer_cfg = dict(
+        type='AutoTokenizer',
+        weight_dir = load_from        
+    )
     # 初始化对话存储列表，用于存储上下文历史
     conversation = []
-    model, tokenizer = init_model(device, load_from)
+    tokenizer = MODELS.build_from_cfg(tokenizer_cfg)
+    model = MODELS.build_from_cfg(llm_cfg).eval().to(device)
+    print(f'模型参数: {sum(p.numel() for p in model.parameters()) / 1e6:.2f} M(illion)')
     # 创建流式输出器（边生成边打印）
-    # skip_prompt=True 表示不重复打印用户输入
-    # skip_special_tokens=True 表示跳过 <bos>、<eos>、<pad> 等特殊符号
+    # skip_prompt=True 表示不重复打印用户输入, skip_special_tokens=True 表示跳过 <bos>、<eos>、<pad> 等特殊符号
     streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
     
     prompt_iter = iter(lambda: input('👶: '), '')

@@ -1,51 +1,45 @@
-import argparse
-import random
-import warnings
-import numpy as np
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, TextStreamer
-from .models.base_models.minimind import MiniMindConfig, MiniMindForCausalLM
-from heltonx.utils.utils import seed_everything
-from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
+from transformers import AutoTokenizer, TextStreamer
+from heltonx.utils.register import MODELS
 
 
-
-def init_model(device, tokenizer_dir, weight_path, hidden_size, num_hidden_layers, use_moe, inference_rope_scaling):
-    """加载模型与分词器(加载huggingface, transformer库的格式的模型)
-    """
-    # 加载训练好的分词器, 会根据模型名称自动选择正确的分词规则（例如BPE、SentencePiece）
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir)
-    # 加载语言模型
-    configs = dict(
-        hidden_size=hidden_size,
-        num_hidden_layers=num_hidden_layers,
-        use_moe=use_moe,
-        inference_rope_scaling=inference_rope_scaling,
-        vocab_size=6400
-    )
-    model = MiniMindForCausalLM(configs)
-    # model.load_state_dict(torch.load(weight_path, map_location=device), strict=True)
-    model = load_state_dict_with_prefix(model, weight_path)
-    print(f'模型参数: {sum(p.numel() for p in model.parameters()) / 1e6:.2f} M(illion)')
-    return model.eval().to(device), tokenizer
 
 
 
 def main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     # weight_path = 'log/llm/minimind_sft512_cot/2025-11-03-15-30-10_train_ddp/last.pt'
-    weight_path = 'log/llm/minimind_sft512/2025-11-02-13-46-32_train_ddp/last.pt'
+    # weight_path = 'log/llm/minimind_sft512/2025-11-02-13-46-32_train_ddp/last.pt'
+    weight_path = 'log/llm/minimind_sft2048/2025-11-03-22-01-31_train_ddp/last.pt'
+    # weight_path = 'log/llm/minimind_dpo512/2025-11-04-19-45-47_train_ddp/last.pt'
     tokenizer_dir = 'llm/tokenizer_configs/minimind2'
     instruct_model = True
-    historys = 2
-    # seed_everything(42) 
+    historys = 0
+    llm_cfgs=dict(
+        type="MiniMindForCausalLM",
+        load_ckpt=weight_path, 
+        config=dict(
+            hidden_size=768,      # tokens维度
+            num_hidden_layers=16, # transformer 堆叠层数
+            vocab_size=6400,      # 使用的词表的大小(单词数)
+            use_moe=False, 
+            inference_rope_scaling=False,
+        )
+    )
+    tokenizer_cfg = dict(
+        type='AutoTokenizer',
+        weight_dir = tokenizer_dir   
+    )
+
+    # 加载训练好的分词器, 会根据模型名称自动选择正确的分词规则（例如BPE、SentencePiece）
+    tokenizer = MODELS.build_from_cfg(tokenizer_cfg)
+    model = MODELS.build_from_cfg(llm_cfgs).eval().to(device)
+    print(f'模型参数: {sum(p.numel() for p in model.parameters()) / 1e6:.2f} M(illion)')
 
     # 初始化对话存储列表，用于存储上下文历史
     conversation = []
-    model, tokenizer = init_model(device, tokenizer_dir, weight_path, 768, 16, False, False)
     # 创建流式输出器（边生成边打印）
-    # skip_prompt=True 表示不重复打印用户输入
-    # skip_special_tokens=True 表示跳过 <bos>、<eos>、<pad> 等特殊符号
+    # skip_prompt=True 表示不重复打印用户输入, skip_special_tokens=True 表示跳过 <bos>、<eos>、<pad> 等特殊符号
     streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
     
     prompt_iter = iter(lambda: input('👶: '), '')

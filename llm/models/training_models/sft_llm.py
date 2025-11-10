@@ -8,7 +8,7 @@ from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
 
 @MODELS.register
 class SFTLLM(nn.Module):
-    def __init__(self, load_ckpt, llm:nn.Module, loss:nn.Module):
+    def __init__(self, llm:nn.Module, loss:nn.Module):
         """有监督微调LLM(用于实现针对LLM的SFT逻辑, 本质只是一个套壳, 核心的模型还是self.llm)
            Instruct-Tuning, CoT-Tuning本质都是SFT, 均适用该类
         """
@@ -17,9 +17,6 @@ class SFTLLM(nn.Module):
         self.llm = llm
         # 损失
         self.loss = loss
-        # 是否导入预训练权重
-        if load_ckpt: 
-            self = load_state_dict_with_prefix(self, load_ckpt)
 
     
     def forward(self, batch_datas, return_loss=True):
@@ -36,14 +33,14 @@ class SFTLLM(nn.Module):
         # 不计算PAD部分的loss
         gen_loss = (loss * loss_mask).sum() / loss_mask.sum()
         # aux_loss可能是MoE的负载均衡损失
-        aux_loss = torch.tensor(0.) if out.aux_loss == 0 else out.aux_loss
+        aux_loss = getattr(out, "aux_loss", torch.tensor(0.0, device=out.logits.device))
+        aux_loss = torch.tensor(0.0, device=out.logits.device) if aux_loss == 0.0 else aux_loss
 
         '''损失以字典形式组织'''
         losses = dict(
             gen_loss=gen_loss,
             aux_loss=aux_loss
         )
-        # TODO: 梯度裁剪, 梯度累加
         return losses
 
 

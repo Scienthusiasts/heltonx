@@ -24,9 +24,9 @@ grad_clip=1.0
 '''模型配置参数'''
 model_cfgs = dict(
     type="PretrainLLM",
-    load_ckpt=load_ckpt, 
     llm=dict(
         type="MiniMindForCausalLM",
+        load_ckpt=load_ckpt, 
         config=dict(
             hidden_size=768,      # tokens维度
             num_hidden_layers=16, # transformer 堆叠层数
@@ -44,10 +44,10 @@ model_cfgs = dict(
 '''数据集配置参数'''
 dataset_cfgs=dict(
     train_dataset_cfg=dict(
-        type="PretrainDataset",
+        type="SFTDataset",
         json_data_path=json_data_path, 
         tokenizer_cfg_dir=tokenizer_cfg_dir, 
-        max_length=512
+        max_length=512,
     ),
     valid_dataset_cfg=None,
     train_bs=bs,

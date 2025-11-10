@@ -18,9 +18,9 @@ class PretrainDataset(Dataset):
     def __init__(self, json_data_path, tokenizer_cfg_dir, max_length=512):
         """预训练数据集, 从 jsonl 文件中读取每一行的 {"text": "..."} 数据;
             Args:
-                json_data_path:          数据集json文件
-                tokenizer_cfg_dir: 模型权重(hf格式)
-                max_length:              数据的最大序列长度, 超过会截断, 不足会填充 PAD
+                json_data_path:     数据集json文件
+                tokenizer_cfg_dir:  模型权重(hf格式)
+                max_length:         数据的最大序列长度, 超过会截断, 不足会填充 PAD
         """
         super().__init__()
         # 加载训练好的 HuggingFace 格式的 tokenizer，用于把文本转成 token ids

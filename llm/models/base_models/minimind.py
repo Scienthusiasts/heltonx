@@ -10,7 +10,7 @@ from .blocks import *
 from llm.models.base_model_configs import MiniMindConfig
 # 注册机制
 from heltonx.utils.register import MODELS
-
+from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
 
 
 class MiniMindBlock(nn.Module):
@@ -105,7 +105,7 @@ class MiniMindModel(nn.Module):
 class MiniMindForCausalLM(PreTrainedModel, GenerationMixin):
     # config_class = MiniMindConfig
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, load_ckpt=None):
         llm_config = MiniMindConfig(**config)
         super(MiniMindForCausalLM, self).__init__(llm_config)
         hidden_size = config.get('hidden_size')
@@ -115,6 +115,9 @@ class MiniMindForCausalLM(PreTrainedModel, GenerationMixin):
         self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False)
         self.model.embed_tokens.weight = self.lm_head.weight
         self.OUT = CausalLMOutputWithPast()
+        # 导入权重
+        if load_ckpt:
+            load_state_dict_with_prefix(self, load_ckpt)
 
     def forward(self,
                 input_ids: Optional[torch.Tensor] = None,

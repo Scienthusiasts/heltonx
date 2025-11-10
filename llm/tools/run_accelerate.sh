@@ -16,16 +16,31 @@ cd /mnt/yht/code/HeltonPretrain
 #     --config /data/yht/code/HeltonPretrain/llm/configs/minimind_pretrain.py
 
 # sft_512_minimind
-# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
-#     llm/tools/train_accelerate.py \
-#     --config /data/yht/code/HeltonPretrain/llm/configs/minimind_sft512.py
-
-# sft_2048_minimind
 PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
     llm/tools/train_accelerate.py \
-    --config /data/yht/code/HeltonPretrain/llm/configs/minimind_sft2048.py
+    --config /data/yht/code/HeltonPretrain/llm/configs/minimind_sft512.py
+
+# sft_2048_minimind
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     llm/tools/train_accelerate.py \
+#     --config /data/yht/code/HeltonPretrain/llm/configs/minimind_sft2048.py
 
 # sft_512_cot_minimind
 # PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
 #     llm/tools/train_accelerate.py \
 #     --config /data/yht/code/HeltonPretrain/llm/configs/minimind_sft_cot.py
+
+# dpo_1024_minimind
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     llm/tools/train_accelerate.py \
+#     --config /data/yht/code/HeltonPretrain/llm/configs/minimind_dpo1024.py
+
+# pretrain_512_Qwen3-0.6B
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     llm/tools/train_accelerate.py \
+#     --config /data/yht/code/HeltonPretrain/llm/configs/qwen3_0.6b_pretrain.py
+
+# sft_512_Qwen3-0.6B
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     llm/tools/train_accelerate.py \
+#     --config /data/yht/code/HeltonPretrain/llm/configs/qwen3_0.6b_sft512.py

@@ -1,21 +1,20 @@
-json_data_path = '/data/yht/data/llm/sft_2048.jsonl'
-tokenizer_cfg_dir = '/data/yht/code/HeltonPretrain/llm/tokenizer_configs/minimind2'
-vocab_size = 6400
+json_data_path = '/data/yht/data/llm/pretrain_hq.jsonl'
+tokenizer_cfg_dir = '/data/yht/code/HeltonPretrain/llm/tokenizer_configs/qwen3'
 
 mode = 'train_ddp'
 seed = 42
-log_dir = r'./log/llm/minimind_sft2048'
+log_dir = r'./log/llm/qwen3_0.6b_sft512'
 epoch = 4
-bs = 16
+bs = 4
 lr = 5e-7
 warmup_lr = 4e-7
 lr_decay = 5e-1
-load_ckpt = '/data/yht/code/HeltonPretrain/log/llm/minimind_sft512/2025-11-02-13-46-32_train_ddp/last.pt'
+load_ckpt = '/data/yht/code/HeltonPretrain/ckpts/hugging_face/Qwen-0.6B'
 log_interval = 50
 eval_interval = 1
 resume = None
 # 梯度累加策略, bs等效于 bs*grad_accumulate
-grad_accumulate=2
+grad_accumulate=4
 # 梯度裁剪策略
 grad_clip=1.0
 
@@ -24,16 +23,10 @@ grad_clip=1.0
 '''模型配置参数'''
 model_cfgs = dict(
     type="SFTLLM",
+    # 直接用hugging_face的权重
     llm=dict(
-        type="MiniMindForCausalLM",
-        load_ckpt=load_ckpt, 
-        config=dict(
-            hidden_size=768,      # tokens维度
-            num_hidden_layers=16, # transformer 堆叠层数
-            vocab_size=vocab_size,# 使用的词表的大小(单词数)
-            use_moe=False, 
-            inference_rope_scaling=False,
-        ),
+        type='AutoModelForCausalLM',
+        weight_dir=load_ckpt
     ),
     # 损失就是常规的多分类交叉熵损失(类别数为词表大小vocab_size)
     loss=dict(
@@ -44,10 +37,10 @@ model_cfgs = dict(
 '''数据集配置参数'''
 dataset_cfgs=dict(
     train_dataset_cfg=dict(
-        type="SFTDataset",
+        type="PretrainDataset",
         json_data_path=json_data_path, 
         tokenizer_cfg_dir=tokenizer_cfg_dir, 
-        max_length=1024,
+        max_length=512,
     ),
     valid_dataset_cfg=None,
     train_bs=bs,
