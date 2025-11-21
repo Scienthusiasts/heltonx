@@ -1,10 +1,10 @@
 from transformers import PretrainedConfig
+from typing import Optional, Tuple, List
 
 
 
-
-class MiniMindConfig(PretrainedConfig):
-    model_type = "minimind"
+class MiniMindVConfig(PretrainedConfig):
+    model_type = "minimindv"
 
     def __init__(
             self,
@@ -33,6 +33,10 @@ class MiniMindConfig(PretrainedConfig):
             aux_loss_alpha: float = 0.1,
             seq_aux: bool = True,
             norm_topk_prob: bool = True,
+            # 下面是视觉部分用到的超参数
+            v_hidden_size: int = 512,
+            image_special_token: str = '@' * 196,
+            image_ids: List = [34] * 196,
             **kwargs
     ):
         super().__init__(**kwargs)
@@ -68,3 +72,7 @@ class MiniMindConfig(PretrainedConfig):
         self.aux_loss_alpha = aux_loss_alpha  # 辅助损失的alpha参数
         self.seq_aux = seq_aux  # 是否在序列级别上计算辅助损失
         self.norm_topk_prob = norm_topk_prob  # 是否标准化top-k概率
+        # 视觉部分的超参数
+        self.v_hidden_size = v_hidden_size
+        self.image_special_token = image_special_token
+        self.image_ids = image_ids

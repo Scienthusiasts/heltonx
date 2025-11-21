@@ -1,14 +1,11 @@
 # coding=utf-8
-import os
-import json
 import torch
-import shutil
 import numpy as np
 from functools import partial
 from torch.utils.data import DataLoader
-from utils.utils import seed_everything, worker_init_fn, get_args, dynamic_import_class
-from utils.log_utils import *
-from utils.hooks import hook_after_eval
+from heltonx.utils.utils import seed_everything, worker_init_fn
+from heltonx.utils.log_utils import *
+from heltonx.utils.hooks import NecessaryHook
 from heltonx.utils.register import MODELS, DATASETS, EVALPIPELINES
 
 
@@ -32,6 +29,7 @@ class Evaler():
         seed_everything(self.seed)
         # GPU/CPU
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(self.device)
 
         '''导入网络'''
         self.model = MODELS.build_from_cfg(model_cfgs).to(self.device)
@@ -50,7 +48,7 @@ class Evaler():
         )
 
         '''日志模块'''
-        self.runner_logger = RunnerLogger('eval', self.log_dir, 1, 1, 1)
+        self.runner_logger = RunnerLogger('eval', self.log_dir, 1, 1, 1, 1)
         self.log_dir = self.runner_logger.log_dir
 
         '''Hook 管理'''

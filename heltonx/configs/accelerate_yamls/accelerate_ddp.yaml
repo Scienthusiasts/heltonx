@@ -2,7 +2,7 @@ compute_environment: LOCAL_MACHINE
 distributed_type: MULTI_GPU
 num_machines: 1
 machine_rank: 0
-num_processes: 4          # ⚠️ 这里要与环境中 export 的 GPU 数一致（如上 0,3 → 2 个）
+num_processes: 2          # ⚠️ 这里要与环境中 export 的 GPU 数一致（如上 0,3 → 2 个）
 mixed_precision: bf16     # 混合精度训练: fp16 / bf16 / "no"
 use_cpu: false
 downcast_bf16: "no"       # 对于那些保留原始精度的参数, 禁止自动降精度，保持原始 dtype（通常是 fp32）

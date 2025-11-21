@@ -1,7 +1,5 @@
 # 需要import才能注册
 from pretrain import * 
-from generation import * 
-from detection import * 
 
 from heltonx.utils.utils import get_args, dynamic_import_class
 from heltonx.tools.eval import *
@@ -19,7 +17,8 @@ if __name__ == '__main__':
     # 注册 Hook
     # 任务特定的评估pipeline
     eval_pipeline = EVALPIPELINES.build_from_cfg(cargs.eval_pipeline_cfgs)
-    runner.register_hook("after_eval", hook_after_eval)
+    hook = NecessaryHook(eval_pipeline)
+    runner.register_hook("after_eval", hook.hook_after_eval)
     runner.eval()
 
 

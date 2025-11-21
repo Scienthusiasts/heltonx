@@ -8,6 +8,7 @@ from heltonx.tools.train_accelerate import *
 
 
 if __name__ == '__main__':
+    torch.autograd.set_detect_anomaly(True)
     args = get_args()
     config_path = args.config
     # 使用动态导入模块导入参数文件

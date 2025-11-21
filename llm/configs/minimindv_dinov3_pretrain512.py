@@ -1,16 +1,21 @@
-json_data_path = '/data/yht/data/llm/pretrain_hq.jsonl'
+'''VLM Pretrain主要是做Image Caption任务, 还不涉及具体细节的问答'''
+json_data_path = '/mnt/yht/data/vlm/pretrain_data_qwen3vlflash_.jsonl'
+imgs_dir = '/mnt/yht/data/vlm/pretrain_images'
+img_size = [224, 224]
 tokenizer_cfg_dir = '/data/yht/code/HeltonPretrain/llm/tokenizer_configs/minimind2'
 vocab_size = 6400
 
 mode = 'train_ddp'
 seed = 42
-log_dir = r'./log/llm/minimind_pretrain'
+log_dir = r'./log/vlm/minimindv_dinov3_pretrain512'
 epoch = 12
 bs = 32
-lr = 5e-4
+lr = 4e-4
 warmup_lr = 1e-5
 lr_decay = 1e-1
-load_ckpt = None
+load_ckpt = 'log/llm/minimind_sft2048/2025-11-03-22-01-31_train_ddp/last.pt'
+vision_model_path = 'ckpts/hugging_face/DINOv3s'
+vision_emb_dim = 384
 log_interval = 50
 eval_interval = 1
 resume = None
@@ -23,14 +28,19 @@ grad_clip=1.0
 
 '''模型配置参数'''
 model_cfgs = dict(
-    type="PretrainLLM",
-    llm=dict(
-        type="MiniMindForCausalLM",
+    type="PretrainVLM",
+    vlm=dict(
+        type="MiniMindForCausalVLM",
         load_ckpt=load_ckpt, 
+        vision_encoder = dict(
+            type='DINOv3',
+            weight_dir=vision_model_path
+        ),
         config=dict(
-            hidden_size=768,      # tokens维度
-            num_hidden_layers=16, # transformer 堆叠层数
-            vocab_size=vocab_size,# 使用的词表的大小(单词数)
+            v_hidden_size=vision_emb_dim,  # 视觉tokens初始维度
+            hidden_size=768,               # 模型tokens维度
+            num_hidden_layers=16,          # transformer 堆叠层数
+            vocab_size=vocab_size,         # 使用的词表的大小(单词数)
             use_moe=False, 
             inference_rope_scaling=False,
         ),
@@ -44,7 +54,9 @@ model_cfgs = dict(
 '''数据集配置参数'''
 dataset_cfgs=dict(
     train_dataset_cfg=dict(
-        type="PretrainDataset",
+        type="VLMPretrainDataset",
+        imgs_dir=imgs_dir,
+        img_size=img_size,
         json_data_path=json_data_path, 
         tokenizer_cfg_dir=tokenizer_cfg_dir, 
         max_length=512,

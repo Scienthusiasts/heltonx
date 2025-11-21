@@ -137,11 +137,11 @@ if __name__ == '__main__':
     img_dir = '/mnt/yht/data/The_Oxford_IIIT_Pet_Dataset/images/train'
     # model = DINOv3("vit_huge_plus_patch16_dinov3.lvd1689m", pretrained=False, load_ckpt='ckpts/backbone_vit_huge_plus_patch16_dinov3.lvd1689m.pt').to(device)
     # model = DINOv3("vit_huge_plus_patch16_dinov3.lvd1689m", pretrained=True, load_ckpt=None).to(device)
-    # model = DINOv3("vit_small_patch16_dinov3.lvd1689m", pretrained=False, load_ckpt='ckpts/backbone_vit_small_patch16_dinov3.lvd1689m.pt').to(device)
-    model = DINOv3("vit_small_patch16_dinov3.lvd1689m", pretrained=True, load_ckpt=None).to(device)
+    model = DINOv3("vit_small_patch16_dinov3.lvd1689m", pretrained=False, load_ckpt='ckpts/vit_small_patch16_dinov3.lvd1689m.pt').to(device)
+    # model = DINOv3("vit_small_patch16_dinov3.lvd1689m", pretrained=True, load_ckpt=None).to(device)
     print(model)
     img_dir = r'/mnt/yht/data/The_Oxford_IIIT_Pet_Dataset/images/valid'
-    img_path = rf"{img_dir}/Maine_Coon/Maine_Coon_41.jpg"
+    img_path = rf"demo/P0262__1024__824___0.png"
     image = np.array(Image.open(img_path).convert('RGB'))
 
     # 图像预处理
@@ -151,7 +151,7 @@ if __name__ == '__main__':
     print(feature_map)
     print(feature_map.mean(), feature_map.std()) 
     # 与指定位置的注意力图
-    row, col = 21, 21
+    row, col = 46, 43
     heatmap = model.cosine_similarity_map(feature_map, row, col).squeeze(0).cpu().numpy()
     plt.imshow(heatmap)
     plt.text(

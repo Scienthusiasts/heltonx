@@ -1,1 +1,2 @@
 from .minimind_config import MiniMindConfig
+from .minimindv_config import MiniMindVConfig

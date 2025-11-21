@@ -155,7 +155,6 @@ class Trainer():
         if self.grad_accumulate is None or (self.cur_step+1) % self.grad_accumulate==0:
             # 梯度裁剪 LLM 训练中使用, 保证训练的稳定性
             if self.grad_clip:
-                # torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                 self.accelerator.clip_grad_norm_(self.model.parameters(), self.grad_clip)
             # 更新参数
             self.optimizer.step()

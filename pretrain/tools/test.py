@@ -217,5 +217,5 @@ if __name__ == '__main__':
         captions = ["the deep blue eyes of the cat in the picture."]
         infer_single_img_fgclip(device, model, img_size, img_path, captions, log_dir)
 
-    
+
     f2()

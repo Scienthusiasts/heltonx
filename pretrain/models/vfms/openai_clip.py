@@ -119,7 +119,7 @@ if __name__ == '__main__':
     # 图像预处理
     transform = Transforms(img_size)
     tensor_img = torch.tensor(transform.valid_transform(image=image)['image']).permute(2,0,1).unsqueeze(0).to(device)
-    img_embs = model(device, tensor_img, modality='image')
-    text_embs = model(device, prompts, modality='text')
+    img_embs = model(tensor_img, 'image', device)
+    text_embs = model(prompts, 'text', device)
     print(img_embs.shape, text_embs.shape)
     print(text_embs)

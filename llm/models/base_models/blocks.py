@@ -14,31 +14,37 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 
 
 class RMSNorm(torch.nn.Module):
-    """RMSNorm实现
+    """RMSNorm实现(相比LN丢弃了求mean操作)
     """
-    def __init__(self, dim: int, eps: float = 1e-5):
+    def __init__(self, dim, eps=1e-6):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
 
-    def _norm(self, x):
-        # torch.rsqrt是取倒数操作
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-
     def forward(self, x):
-        return self.weight * self._norm(x.float()).type_as(x)
+        # 先在 float32 上计算均方根，避免 AMP 的 dtype 问题
+        orig_dtype = x.dtype
+        # 计算 mean of squares (float32)，保持 keepdim
+        variance = x.pow(2).mean(-1, keepdim=True).float()
+        # torch.rsqrt是取倒数操作
+        inv_rms = torch.rsqrt(variance + self.eps)  # float32
+        x_normed = x.float() * inv_rms  # still float32
+        # apply weight (broadcast)
+        out = self.weight * x_normed  # weight is float32 param
+        return out.to(orig_dtype)
 
 
 
 
 
-def precompute_freqs_cis(dim: int, end: int = int(32 * 1024), rope_base: float = 1e6,
-                         rope_scaling: Optional[dict] = None):
+def precompute_freqs_cis(dim: int, end: int = int(32 * 1024), rope_base: float = 1e6, rope_scaling: Optional[dict] = None):
     freqs = 1.0 / (rope_base ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
     if rope_scaling is not None:
         orig_max, factor, beta_fast, beta_slow = (
-            rope_scaling.get("original_max_position_embeddings", 2048), rope_scaling.get("factor", 4),
-            rope_scaling.get("beta_fast", 4.0), rope_scaling.get("beta_slow", 1.0)
+            rope_scaling.get("original_max_position_embeddings", 2048), 
+            rope_scaling.get("factor", 4),
+            rope_scaling.get("beta_fast", 4.0), 
+            rope_scaling.get("beta_slow", 1.0)
         )
         if end / orig_max > 1.0:
             corr_dim = next((i for i in range(dim // 2) if 2 * math.pi / freqs[i] > orig_max), dim // 2)
@@ -71,7 +77,11 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
-    """torch.repeat_interleave(x, dim=2, repeats=n_rep)"""
+    """替代torch.repeat_interleave(x, dim=2, repeats=n_rep), 
+       对键值头(Key-Value heads)进行重复扩展以匹配查询头数量(GQA中使用)
+        x:     形状为 [bs, slen, num_key_value_heads, head_dim] 的键或值张量
+        n_rep: 每个键值头需要重复的次数
+    """
     bs, slen, num_key_value_heads, head_dim = x.shape
     if n_rep == 1:
         return x
@@ -83,81 +93,182 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
 
 
 
-
-
 class Attention(nn.Module):
+    """
+    多头注意力机制模块，支持分组查询注意力(GQA)和旋转位置编码(RoPE)
+    
+    特性：
+    - 支持Flash Attention（如果可用）
+    - 支持KV缓存用于推理加速
+    - 支持旋转位置编码(RoPE)
+    - 支持分组查询注意力(GQA)以节省计算和内存
+    """
+    
     def __init__(self, args: PretrainedConfig):
         super().__init__()
-        self.num_key_value_heads = args.num_attention_heads if args.num_key_value_heads is None else args.num_key_value_heads
-        assert args.num_attention_heads % self.num_key_value_heads == 0
-        self.n_local_heads = args.num_attention_heads
-        self.n_local_kv_heads = self.num_key_value_heads
-        self.n_rep = self.n_local_heads // self.n_local_kv_heads
-        self.head_dim = args.hidden_size // args.num_attention_heads
-        self.q_proj = nn.Linear(args.hidden_size, args.num_attention_heads * self.head_dim, bias=False)
-        self.k_proj = nn.Linear(args.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
-        self.v_proj = nn.Linear(args.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
-        self.o_proj = nn.Linear(args.num_attention_heads * self.head_dim, args.hidden_size, bias=False)
+        
+        # ==================== 注意力头配置 ====================
+        # 设置查询头数和键值头数，支持分组查询注意力(GQA)
+        # 注意查询头数必须能被键值头数整除
+        self.num_q_heads = args.num_attention_heads
+        self.num_kv_heads = (args.num_attention_heads 
+                                  if args.num_key_value_heads is None 
+                                  else args.num_key_value_heads)
+        
+        # 计算每个键值头需要重复的次数（用于GQA）
+        self.num_repeats = self.num_q_heads // self.num_kv_heads
+        self.head_dim = args.hidden_size // self.num_q_heads
+        
+        # ==================== 投影层 ====================
+        # 查询、键、值、输出投影层
+        self.q_proj = nn.Linear(args.hidden_size, self.num_q_heads * self.head_dim, bias=False)
+        self.k_proj = nn.Linear(args.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
+        self.v_proj = nn.Linear(args.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
+        self.o_proj = nn.Linear(self.num_q_heads * self.head_dim, args.hidden_size, bias=False)
+        
+        # ==================== 正则化层 ====================
         self.attn_dropout = nn.Dropout(args.dropout)
-        self.resid_dropout = nn.Dropout(args.dropout)
-        self.dropout = args.dropout
-        self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention') and args.flash_attn
-        # print("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.0")
+        self.residual_dropout = nn.Dropout(args.dropout)
+        self.dropout_rate = args.dropout
+        
+        # ==================== Flash Attention支持 ====================
+        self.enable_flash_attention = (
+            hasattr(F, 'scaled_dot_product_attention') and 
+            getattr(args, 'flash_attn', False)
+        )
+        if not self.enable_flash_attention:
+            print("警告: 使用标准注意力实现。如需Flash Attention，请升级PyTorch至2.0+版本")
 
-    def forward(self,
-                x: torch.Tensor,
-                position_embeddings: Tuple[torch.Tensor, torch.Tensor],  # 修改为接收cos和sin
-                past_key_value: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
-                use_cache=False,
-                attention_mask: Optional[torch.Tensor] = None):
-        bsz, seq_len, _ = x.shape
-        xq, xk, xv = self.q_proj(x), self.k_proj(x), self.v_proj(x)
-        xq = xq.view(bsz, seq_len, self.n_local_heads, self.head_dim)
-        xk = xk.view(bsz, seq_len, self.n_local_kv_heads, self.head_dim)
-        xv = xv.view(bsz, seq_len, self.n_local_kv_heads, self.head_dim)
+    def forward(
+        self,
+        x: torch.Tensor,
+        pe: Tuple[torch.Tensor, torch.Tensor],  # (cos, sin) 旋转位置编码
+        cache_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        use_cache: bool = False,
+        attn_mask: Optional[torch.Tensor] = None
+    ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
+        """
+        前向传播
+        
+        Args:
+            x: 输入张量 [batch_size, seq_len, hidden_size]
+            position_embeddings: 旋转位置编码的cos和sin值
+            cache_kv:  过去的键值缓存，用于推理加速
+            use_cache: 是否使用KV缓存
+            attn_mask: 注意力掩码
+            
+        Returns:
+            output:   注意力输出 [batch_size, seq_len, hidden_size]
+            cache_kv: 更新后的KV缓存(如果use_cache=True)
+        """
+        batch_size, seq_len, _ = x.shape
+        cos, sin = pe
+        
+        '''线性投影qkv'''
+        # 应用查询、键、值投影 num_q_heads > num_kv_heads
+        q = self.q_proj(x)  # [bs, seq_len, num_q_heads * dim]
+        k = self.k_proj(x)  # [bs, seq_len, num_kv_heads * dim]
+        v = self.v_proj(x)  # [bs, seq_len, num_kv_heads * dim]
+        # 改变形状为多头格式
+        q = q.view(batch_size, seq_len, self.num_q_heads, self.head_dim) 
+        k = k.view(batch_size, seq_len, self.num_kv_heads, self.head_dim)
+        v = v.view(batch_size, seq_len, self.num_kv_heads, self.head_dim)
+        
+        '''添加旋转位置编码'''
+        # 对查询和键应用旋转位置编码
+        q, k = apply_rotary_pos_emb(q, k, cos[:seq_len], sin[:seq_len])
+        
+        '''kv cache'''
+        if cache_kv is not None:
+            # 将当前的k和v拼在KV cache的最后
+            cache_k, cache_v = cache_kv
+            k = torch.cat([cache_k, k], dim=1)
+            v = torch.cat([cache_v, v], dim=1)
+        # 更新 KV cache
+        current_kv_cache = (k, v) if use_cache else None
+        
+        '''GQA'''
+        # 扩展键值头以匹配查询头数量(复制kv)
+        # [bs,seq_len, num_kv_heads, head_dim] -> [bs, seq_len, num_q_heads, dim]
+        k = repeat_kv(k, self.num_repeats)
+        v = repeat_kv(v, self.num_repeats)
+        # 转置为注意力计算的格式 [bs, seq_len, num_heads, dim] -> [bs, num_heads, seq_len, dim]
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+        # multi head attention计算
+        if self._use_flash_attn(seq_len, attn_mask):
+            output = self._flash_attn(q, k, v, attn_mask)
+        else:
+            output = self._standard_attn(q, k, v, attn_mask, seq_len)
+        
+        '''输出投影'''
+        # 转置回原始格式
+        output = output.transpose(1, 2).reshape(batch_size, seq_len, -1)
+        # 应用输出投影和残差dropout
+        output = self.o_proj(output)
+        output = self.residual_dropout(output)
+        
+        return output, current_kv_cache
 
-        cos, sin = position_embeddings
-        xq, xk = apply_rotary_pos_emb(xq, xk, cos[:seq_len], sin[:seq_len])
 
-        # kv_cache实现
-        if past_key_value is not None:
-            xk = torch.cat([past_key_value[0], xk], dim=1)
-            xv = torch.cat([past_key_value[1], xv], dim=1)
-        past_kv = (xk, xv) if use_cache else None
 
-        xq, xk, xv = (
-            xq.transpose(1, 2),
-            repeat_kv(xk, self.n_rep).transpose(1, 2),
-            repeat_kv(xv, self.n_rep).transpose(1, 2)
+    def _use_flash_attn(self, seq_len: int, attn_mask: Optional[torch.Tensor]) -> bool:
+        """判断是否使用Flash Attention
+            Flash Attention使用条件:
+            1. 启用Flash Attention
+            2. 序列长度大于1
+            3. 注意力掩码为None或全1 (无padding)
+            4. 训练时或推理时都可用
+        """
+        return (self.enable_flash_attention and seq_len > 1 and 
+                (attn_mask is None or torch.all(attn_mask == 1)))
+
+
+    def _flash_attn(self, q, k, v, attn_mask: Optional[torch.Tensor]) -> torch.Tensor:
+        """Flash Attention前向传播
+           使用PyTorch 2.0+的高效注意力实现，具有更好的内存效率和速度
+        """
+        # 准备注意力掩码（如果需要）
+        attn_mask = None
+        if attn_mask is not None:
+            attn_mask = attention_mask.view(query.size(0), 1, 1, -1
+            ).expand(query.size(0), self.num_q_heads, query.size(2), -1
+            ).bool()
+        # 应用Flash Attention(调用pytorch内部函数实现)
+        return F.scaled_dot_product_attention(
+            q, k, v,
+            attn_mask=attn_mask,
+            dropout_p=self.dropout_rate if self.training else 0.0,
+            is_causal=True  # 自回归语言模型的因果掩码
         )
 
-        if self.flash and seq_len > 1 and (attention_mask is None or torch.all(attention_mask == 1)):
-            attn_mask = (
-                None
-                if attention_mask is None
-                else attention_mask.view(bsz, 1, 1, -1).expand(bsz, self.n_local_heads, seq_len, -1).bool()
-            )
 
-            output = F.scaled_dot_product_attention(xq, xk, xv, attn_mask=attn_mask, dropout_p=self.dropout if self.training else 0.0, is_causal=True)
-        else:
-            scores = (xq @ xk.transpose(-2, -1)) / math.sqrt(self.head_dim)
-            scores = scores + torch.triu(
-                torch.full((seq_len, seq_len), float("-inf"), device=scores.device),
-                diagonal=1
-            ).unsqueeze(0).unsqueeze(0)  # scores+mask
+    def _standard_attn(self, q, k, v, attn_mask: Optional[torch.Tensor], seq_len: int) -> torch.Tensor:
+        """标准注意力前向传播, 当Flash Attention不可用时使用的回退方案
+        """
+        # 计算注意力分数
+        attn_scores = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        
+        # 因果掩码(上三角矩阵, 防止看到未来信息)
+        causal_mask = torch.triu(torch.full((seq_len, seq_len), float("-inf"), device=attn_scores.device), diagonal=1)
+        attn_scores = attn_scores + causal_mask.unsqueeze(0).unsqueeze(0)
+        # 外部注意力掩码（如padding掩码）
+        if attn_mask is not None:
+            extended_mask = attn_mask.unsqueeze(1).unsqueeze(2)
+            extended_mask = (1.0 - extended_mask) * -1e9  # 将0变为负无穷
+            attn_scores = attn_scores + extended_mask
 
-            if attention_mask is not None:
-                extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
-                extended_attention_mask = (1.0 - extended_attention_mask) * -1e9
-                scores = scores + extended_attention_mask
+        # 转换为float32进行softmax以增强数值稳定性
+        attn_weights = F.softmax(attn_scores.float(), dim=-1).type_as(q)
+        attn_weights = self.attn_dropout(attn_weights)
+        
+        # 应用注意力权重到值向量
+        return attn_weights @ v
 
-            scores = F.softmax(scores.float(), dim=-1).type_as(xq)
-            scores = self.attn_dropout(scores)
-            output = scores @ xv
 
-        output = output.transpose(1, 2).reshape(bsz, seq_len, -1)
-        output = self.resid_dropout(self.o_proj(output))
-        return output, past_kv
+
+
 
 
 class FeedForward(nn.Module):

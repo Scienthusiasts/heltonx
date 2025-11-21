@@ -1,4 +1,8 @@
 from .minimind import MiniMindForCausalLM
-from .hf_models import AutoModelForCausalLM_builder, AutoTokenizer_builder
+from .minimindv import MiniMindForCausalVLM
+from .hf_models import AutoModelForCausalLM_builder, AutoTokenizer_builder, DINOv3, OpenAICLIPImgEncoder
 
-__all__ = ["MiniMindForCausalLM", "AutoModelForCausalLM_builder", "AutoTokenizer_builder"]
+__all__ = [
+    "MiniMindForCausalLM", "MiniMindForCausalVLM", 
+    "AutoModelForCausalLM_builder", "AutoTokenizer_builder", "DINOv3","OpenAICLIPImgEncoder"
+    ]
