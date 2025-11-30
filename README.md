@@ -58,6 +58,8 @@ heltonx:
 
 ###  [`detection` 逻辑](https://github.com/Scienthusiasts/heltonx/blob/main/detection/README.md)
 
+###  [`llm` 逻辑](https://github.com/Scienthusiasts/heltonx/blob/main/llm/README.md)
+
 ###  `heltonx/utils/register.py`
 
 - `MODELS`：注册nn.Module子类

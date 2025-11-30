@@ -10,25 +10,27 @@ from heltonx.utils.register import MODELS
 
 
 def main():
+    #<image> 请你描述一下图像中所展示的内容.
+    #<image> 图片中有几只小动物.
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    # weight_path = 'ckpts/minimind2/minimindv_sft_vlm_768.pth'
-    weight_path = 'log/llm/minimind_pretrain/2025-11-19-19-35-20_train_ddp/last.pt'
+    # weight_path = 'log/vlm/minimindv_dinov3_pretrain1024/2025-11-23-11-51-45_train_ddp/last.pt'
+    weight_path = 'log/vlm/minimindv_dinov3_pretrain512/2025-11-28-23-45-35_train_ddp/last.pt'
+    # weight_path = 'log/vlm/minimindv_clip_pretrain512/2025-11-19-19-35-20_train_ddp/last.pt'
     tokenizer_dir = 'llm/tokenizer_configs/minimind2'
     # img_path = '/mnt/yht/data/vlm/pretrain_images/GCC_train_002672738.jpg'
-    img_path = 'llm/demo/P0252__1024__860___350.png'
     instruct_model = True
     historys = 0
     llm_cfgs=dict(
         type="MiniMindForCausalVLM",
         vision_encoder = dict(
-            type="OpenAICLIPImgEncoder",
-            weight_dir="/mnt/yht/code/HeltonPretrain/ckpts/hugging_face/clip-vit-base-patch16"
-            # type='DINOv3',
-            # weight_dir = '/mnt/yht/code/HeltonPretrain/ckpts/hugging_face/DINOv3s'
+            # type="OpenAICLIPImgEncoder",
+            # weight_dir="/mnt/yht/code/HeltonPretrain/ckpts/hugging_face/clip-vit-base-patch16"
+            type='DINOv3',
+            weight_dir = '/mnt/yht/code/HeltonPretrain/ckpts/hugging_face/DINOv3s'
         ),
         load_ckpt=weight_path, 
         config=dict(
-            v_hidden_size=768,    # 视觉tokens初始维度
+            v_hidden_size=384,    # 视觉tokens初始维度
             hidden_size=768,      # 模型tokens维度
             num_hidden_layers=16, # transformer 堆叠层数
             vocab_size=6400,      # 使用的词表的大小(单词数)
@@ -49,12 +51,6 @@ def main():
     model = MODELS.build_from_cfg(llm_cfgs).eval().to(device)
     model.eval().to(device)
     print(f'模型参数: {sum(p.numel() for p in model.parameters()) / 1e6:.2f} M(illion)')
-    # 获取图像
-    image = Image.open(img_path).convert('RGB')
-    # 图像预处理
-    process_img = transform.transform(image=np.array(image))['image'].transpose(2,0,1)      
-    pixel_values = torch.tensor(process_img).to(device).unsqueeze(0).unsqueeze(0)     
-    print(pixel_values.shape)
 
 
     # 初始化对话存储列表，用于存储上下文历史
@@ -62,9 +58,15 @@ def main():
     # 创建流式输出器（边生成边打印）
     # skip_prompt=True 表示不重复打印用户输入, skip_special_tokens=True 表示跳过 <bos>、<eos>、<pad> 等特殊符号
     streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
-    # <image> 请你描述一下图像中所展示的内容.
-    prompt_iter = iter(lambda: input('👶: '), '')
-    for prompt in prompt_iter:
+    prompt = "<image> 请你描述一下图像中所展示的内容."
+    img_path = iter(lambda: input('👶(请输入图像路径): '), '')
+    for img_path in img_path:
+        # 获取图像
+        image = Image.open(img_path).convert('RGB')
+        # 图像预处理
+        process_img = transform.transform(image=np.array(image))['image'].transpose(2,0,1)      
+        pixel_values = torch.tensor(process_img).to(device).unsqueeze(0).unsqueeze(0)     
+
         # 保留最近的历史对话（如果设置了historys）
         conversation = conversation[-historys:] if historys else []
         # 将用户当前输入加入到对话上下文

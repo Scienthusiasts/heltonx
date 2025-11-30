@@ -29,7 +29,11 @@ class VisionProj(nn.Module):
         self.ve_hidden_size = ve_hidden_size
         self.hidden_size = hidden_size
         self.vision_proj = nn.Sequential(
-            nn.Linear(self.ve_hidden_size, self.hidden_size)
+            nn.Linear(self.ve_hidden_size, self.hidden_size),
+            # nn.LayerNorm(self.hidden_size, eps=1e-05),
+            # RMSNorm(self.hidden_size, eps=1e-05),
+            # nn.SiLU(),
+            # nn.Linear(self.hidden_size, self.hidden_size),
         )
 
     def forward(self, x):

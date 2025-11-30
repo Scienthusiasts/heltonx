@@ -7,7 +7,7 @@ from heltonx.utils.register import MODELS
 
 @MODELS.register
 class PretrainVLM(nn.Module):
-    def __init__(self, vlm:nn.Module, loss:nn.Module):
+    def __init__(self, vlm:nn.Module, loss:nn.Module, froze_llm:bool):
         """预训练VLM(用于实现针对VLM的预训练逻辑, 本质只是一个套壳, 核心的模型还是self.llm)
            Pretrain本质是在训练模型的文本补全能力, 训练出来的模型不具备对话能力, 还得经过Instruct-Tuning
         """
@@ -16,6 +16,10 @@ class PretrainVLM(nn.Module):
         self.vlm = vlm
         # 损失
         self.loss = loss
+        # 是否冻结llm部分的所有参数
+        if froze_llm:
+            for param in self.vlm.model.parameters():
+                param.requires_grad = False
 
     
     def forward(self, batch_datas, return_loss=True):

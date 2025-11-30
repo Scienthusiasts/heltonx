@@ -3,7 +3,7 @@
 # export CUDA_VISIBLE_DEVICES=2,3
 # export CUDA_VISIBLE_DEVICES=0,1,2,3
 # export CUDA_VISIBLE_DEVICES=0,3
-export CUDA_VISIBLE_DEVICES=1,2
+export CUDA_VISIBLE_DEVICES=1,3
 
 # training 
 cd /mnt/yht/code/HeltonPretrain
@@ -51,9 +51,14 @@ cd /mnt/yht/code/HeltonPretrain
 # sft_512_minimindv_clip
 # PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
 #     llm/tools/train_accelerate.py \
-#     --config /data/yht/code/HeltonPretrain/llm/configs/minimindv_clip_pretrain512.py
+#     --config /data/yht/code/HeltonPretrain/llm/configs/vlm/minimindv_clip_pretrain512.py
 
 # sft_512_minimindv_dinov3
 PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
     llm/tools/train_accelerate.py \
-    --config /data/yht/code/HeltonPretrain/llm/configs/minimindv_dinov3_pretrain512.py
+    --config /data/yht/code/HeltonPretrain/llm/configs/vlm/minimindv_dinov3_pretrain512.py
+
+# sft_1024_minimindv_dinov3
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     llm/tools/train_accelerate.py \
+#     --config /data/yht/code/HeltonPretrain/llm/configs/vlm/minimindv_dinov3_pretrain1024.py

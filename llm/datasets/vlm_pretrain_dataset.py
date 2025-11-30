@@ -73,12 +73,14 @@ class VLMPretrainDataset(Dataset):
         """
         sample = self.samples[index]
         image_paths = sample['image']
-        # 为了避免长度过长, 只提取回答中的第一段话
+        # 为了避免长度过长, 只截取回答中的第一段话
         sample['conversations'][1]['content'] = sample['conversations'][1]['content'].split('\n')[0]
+        # sample['conversations'][1]['content'] = sample['conversations'][1]['content'][:900]
         # 构建对话提示
         prompt = self._create_chat_prompt(sample['conversations'])
         # 进行tokenize + 截断
         input_ids = self.tokenizer(prompt).input_ids
+        # print(len(input_ids), len(sample['conversations'][1]['content']))
         input_ids = input_ids[:self.max_length]
         # padding补齐
         input_ids += [self.tokenizer.pad_token_id] * (self.max_length - len(input_ids))

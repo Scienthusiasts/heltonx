@@ -7,15 +7,17 @@ vocab_size = 6400
 
 mode = 'train_ddp'
 seed = 42
-log_dir = r'./log/vlm/minimindv_clip_pretrain512'
+log_dir = r'./log/vlm/minimindv_dinov3_pretrain512'
 epoch = 12
 bs = 32
 lr = 4e-4
 warmup_lr = 1e-5
 lr_decay = 1e-1
 load_ckpt = 'log/llm/minimind_sft2048/2025-11-03-22-01-31_train_ddp/last.pt'
-vision_model_path = "/mnt/yht/code/HeltonPretrain/ckpts/hugging_face/clip-vit-base-patch16"
-vision_emb_dim = 768
+vision_model_path = 'ckpts/hugging_face/DINOv3s'
+vision_emb_dim = 384
+train_max_tokens_len = 512
+
 log_interval = 50
 eval_interval = 1
 resume = None
@@ -23,17 +25,18 @@ resume = None
 grad_accumulate=None
 # 梯度裁剪策略
 grad_clip=1.0
-
+froze_llm=False
 
 
 '''模型配置参数'''
 model_cfgs = dict(
     type="PretrainVLM",
+    froze_llm=froze_llm,
     vlm=dict(
         type="MiniMindForCausalVLM",
         load_ckpt=load_ckpt, 
         vision_encoder = dict(
-            type='OpenAICLIPImgEncoder',
+            type='DINOv3',
             weight_dir=vision_model_path
         ),
         config=dict(
@@ -59,7 +62,7 @@ dataset_cfgs=dict(
         img_size=img_size,
         json_data_path=json_data_path, 
         tokenizer_cfg_dir=tokenizer_cfg_dir, 
-        max_length=512,
+        max_length=train_max_tokens_len,
     ),
     valid_dataset_cfg=None,
     train_bs=bs,
