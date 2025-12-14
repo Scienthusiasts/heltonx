@@ -6,6 +6,7 @@ from torch import nn
 from tqdm import tqdm
 from PIL import Image, ImageFile
 import numpy as np
+import math
 from collections import Counter
 from detection.utils.metrics import *
 from detection.utils.utils import OpenCVDrawBox
@@ -19,7 +20,11 @@ from heltonx.utils.register import MODELS
 
 
 
-
+def resize_to_multiple_no_keep_ratio(img, n):
+    h, w = img.shape[:2]
+    new_w = math.ceil(w / n) * n
+    new_h = math.ceil(h / n) * n
+    return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
 
 
 
@@ -44,6 +49,8 @@ def infer_single_img(model, device, img_path, cat_names, save_vis_path):
     transform = Transforms(img_size=img_size)
 
     image = np.array(Image.open(img_path).convert('RGB'))
+    image = resize_to_multiple_no_keep_ratio(image, 8)
+    print(image.shape)
     tensor_img = torch.tensor(transform.test_transform(image=image)['image'])
     tensor_img = resize_tensor_to_multiple(tensor_img, 16)
 
@@ -81,7 +88,7 @@ def infer_single_img(model, device, img_path, cat_names, save_vis_path):
 if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # cat_names = ["aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "diningtable", 
-    #             "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"]
+                # "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"]
     cat_names = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
             'train', 'truck', 'boat', 'traffic light', 'fire hydrant',
             'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog',
@@ -100,66 +107,71 @@ if __name__ == '__main__':
     nc = len(cat_names)
 
     img_size = [800, 800]
-    load_ckpt = 'log/fcos_pafpn_dinov3sta_coco_train_ddp/2025-10-24-11-55-27_train_ddp/last.pt'
+    load_ckpt = 'log/yolov5_coco_train/2025-12-08-22-57-35_train/last.pt'
 
     '''模型配置参数'''
+    phi = 's'
+    anchors=[[10, 13], [16, 30], [33, 23], [30, 61], [62, 45], [59, 119], [116, 90], [156, 198], [373, 326]] 
+    anchors_mask=[[0,1,2], [3,4,5], [6,7,8]]
     model_cfgs = dict(
-        type="FCOS",
-        img_size=img_size,
+        type="YOLOv5",
         nc=nc, 
+        img_size=img_size, 
+        anchors=anchors,
+        anchors_mask=anchors_mask,
         load_ckpt=load_ckpt,
-        nms_score_thr=0.2,
+        nms_score_thr=0.25,
         nms_iou_thr=0.3, 
         nms_agnostic=False,
-        bbox_coder=dict(
-            type="FCOSBBoxCoder",
-            strides=[8, 16, 32, 64, 128]
-        ),
         backbone=dict(
-            type="DINOv3STA",
-            dino_name="vit_small_patch16_dinov3.lvd1689m",
-            sta_layer_dims=[64, 128, 128, 256, 512],
-            fuse_layer_dims=[128, 256, 512],
-            dino_ckpt="ckpts/vit_small_patch16_dinov3.lvd1689m.pt",
-            froze_dino=True
+            type="YOLOv5CSPDarknet",
+            phi=phi,
+            out_layers=[2,3,4],
+            froze_backbone=False,
+            load_ckpt=f'ckpts/yolo/cspdarknet_{phi}_v6.1_backbone.pth'
         ), 
         fpn=dict(
-            type="PAFPN",
-            in_channels=[128, 256, 512],
-            out_channel=256,
-            num_extra_levels=2
-        ),
-        head=dict(
-            type="FCOSHead",
+            type="YOLOv5PAFPN",
+            phi=phi,
+        ), 
+        heads=dict(
+            type="YOLOv5Head",
+            phi=phi,
             nc=nc, 
-            in_channel=256, 
-            cnt_loss=dict(
+            img_size=img_size, 
+            anchors=anchors,
+            anchors_mask=anchors_mask,
+            label_smoothing=0,
+            layers_num=3,
+            cls_loss=dict(
+                # type="FocalLoss",
+                # reduction="mean",
+                # gamma=2.0, 
+                # alpha=0.25
+                type="BCELoss",
+                reduction="mean"
+            ),
+            box_loss=dict(
+                type="IoULoss",
+                iou_type='giou',
+                xywh=True,
+                reduction="none",
+            ),
+            obj_loss=dict(
                 type="BCELoss",
                 reduction="mean"
             ), 
-            cls_loss=dict(
-                type="FocalLoss",
-                reduction="none",
-                gamma=2.0, 
-                alpha=0.25
-            ),
-            reg_loss=dict(
-                type="IoULoss",
-                iou_type='giou',
-                xywh=False,
-                reduction="mean",
-            ),
             assigner=dict(
-                type="FCOSAssigner",
+                type="YOLOv5Assigner",
                 img_size=img_size, 
-                strides=[8, 16, 32, 64, 128], 
-                limit_ranges=[[-1,64],[64,128],[128,256],[256,512],[512,999999]], 
-                sample_radiu_ratio=1.5,
+                anchors=anchors,
+                anchors_mask=anchors_mask,
+                threshold=4,
             )
         )
     )
     model = MODELS.build_from_cfg(model_cfgs).to(device)
     model.eval()
-    img_path = 'detection/demos/cars.jpg'
+    img_path = 'detection/demos/13.jpg'
     save_vis_path = './det_res.jpg'
     infer_single_img(model, device, img_path, cat_names, save_vis_path)

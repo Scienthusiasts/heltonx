@@ -36,7 +36,6 @@ class Evaler():
 
         '''导入数据集'''
         self.valid_dataset = DATASETS.build_from_cfg(dataset_cfgs["valid_dataset_cfg"])
-        print(f'validset图像数:{self.valid_dataset.__len__()} validset类别数:{self.valid_dataset.get_cls_num()}')
         self.valid_dataloader = DataLoader(
             dataset=self.valid_dataset,
             batch_size=dataset_cfgs["valid_bs"],

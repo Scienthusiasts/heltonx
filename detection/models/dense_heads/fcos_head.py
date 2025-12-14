@@ -24,7 +24,7 @@ class ScaleExp(nn.Module):
     def forward(self,x):
         # 对预测的特征图的数值再进行一个指数放缩, 并且放缩的参数是可学习的
         return torch.exp(x*self.scale)
-    
+
 
 
 @MODELS.register

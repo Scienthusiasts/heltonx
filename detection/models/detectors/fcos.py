@@ -36,14 +36,14 @@ class FCOS(nn.Module):
 
 
     def forward(self, datas, return_loss=True):
-        '''一个batch的前向流程(不包括反向传播, 更新梯度)(核心, 要更改训练pipeline主要改这里)
+        '''一个batch的前向流程 (核心, 要更改训练pipeline主要改这里)
         Args:
             datas[0]: batch_imgs:   一个batch里的图像      [bs, 3, H, W]
             datas[1]: batch_bboxes: 一个batch里的GT框      [[gt_nums_per_img, 4=(x, y, w, h)], ..., [...]]
             datas[2]: batch_labels: 一个batch里的GT框类别  [[gt_nums_per_img], ..., [...]]
             return_loss:  只前向或计算损失
         Returns:
-            losses: 所有损失组成的列表(里面必须有一个total_loss字段, 用于反向传播)
+            losses: 所有损失组成的列表 
             cls_logit: 类别logits   [bs, nc, w, h]
             cnt_logit: 中心度logits [bs, 1, w, h]
             reg_pred:  回归值       [bs, 4=(l, t, r, b), w, h]

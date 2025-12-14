@@ -3,7 +3,7 @@
 # export CUDA_VISIBLE_DEVICES=2,3
 # export CUDA_VISIBLE_DEVICES=0,1,2,3
 # export CUDA_VISIBLE_DEVICES=0,3
-export CUDA_VISIBLE_DEVICES=1,3
+export CUDA_VISIBLE_DEVICES=2,3
 
 # training 
 cd /mnt/yht/code/HeltonPretrain

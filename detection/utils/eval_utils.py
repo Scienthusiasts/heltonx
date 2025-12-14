@@ -20,6 +20,11 @@ from heltonx.utils.utils import to_device
 class DetectionEvalPipeline():
     '''一个epoch的评估(基于验证集)
     '''
+    def __init__(self, ):
+        # 图像均值 标准差
+        self.mean = np.array([0.485, 0.456, 0.406]) 
+        self.std = np.array([[0.229, 0.224, 0.225]]) 
+
     def __call__(self, runner, model=None):
         # 直接从传入的类中获取参数(避免每个任务的特殊化):
         device = runner.device
@@ -39,9 +44,9 @@ class DetectionEvalPipeline():
                 # 确保 batch_datas 的所有数据已经在 self.device 上(batch_datas的组织形式是list)
                 batch_datas = to_device(batch_datas, device, non_blocking=True)
                 imgs, imgs_ids, raw_size = batch_datas[0], batch_datas[3], batch_datas[4]
-
+                # boxes, box_scores, box_classes = model.infer(imgs, vis_heatmap=True, save_vis_path='./det_res.jpg')
                 boxes, box_scores, box_classes = model.infer(imgs)
-
+                
                 # 将box坐标(对应有黑边的图, 且默认padding成正方形)映射回无黑边的原始图像
                 if (len(boxes) > 0):
                     boxes = map_boxes_to_origin_size(boxes, raw_size[0], imgs.shape[2])

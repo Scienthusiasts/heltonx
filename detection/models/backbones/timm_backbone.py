@@ -8,10 +8,12 @@ from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
 from heltonx.utils.register import MODELS
 
 
+
+
 @MODELS.register
 class TIMMBackbone(nn.Module):
     """通用 TIMM Backbone 模块
-
+        huggingface里的timm模型: https://huggingface.co/timm?sort_models=downloads#models
     """
     def __init__(self, model_name: str, pretrained=True, out_layers=None, froze_backbone=False, load_ckpt=None):
         """
