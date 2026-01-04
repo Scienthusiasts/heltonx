@@ -292,7 +292,8 @@ class DDPM(nn.Module):
             )
             return losses
         else:
-            return self.sample(bs=bs)
+            # [-1]是只取最后一个time_step
+            return self.sample(bs=bs)[-1]
 
 
 

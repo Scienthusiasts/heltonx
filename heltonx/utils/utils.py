@@ -91,43 +91,70 @@ def to_device(batch, device, non_blocking=True):
 
 
 
-def init_weights(model, init_type, mean=0, std=0.01):
-    '''权重初始化方法 
-    '''
-    for name, param in model.named_parameters():
-        # 处理卷积层和全连接层的权重
-        if 'weight' in name and param.dim() >= 2:
-            if init_type == 'he':
-                nn.init.kaiming_normal_(param, mode='fan_out', nonlinearity='relu')
-            elif init_type == 'normal':
-                nn.init.normal_(param, mean=mean, std=std)
-            elif init_type == 'xavier':
-                nn.init.xavier_normal_(param)
-            elif init_type == 'uniform':
-                nn.init.uniform_(param, a=-std, b=std)
-        
-        # 处理偏置项
-        elif 'bias' in name:
-            nn.init.constant_(param, 0)
-        
-        # 处理独立的nn.Parameter（不是模块的weight/bias）
-        elif param.dim() >= 2:  # 只初始化维度>=2的Parameter
-            if init_type == 'he':
-                nn.init.kaiming_normal_(param, mode='fan_out', nonlinearity='relu')
-            elif init_type == 'normal':
-                nn.init.normal_(param, mean=mean, std=std)
-            elif init_type == 'xavier':
-                nn.init.xavier_normal_(param)
-            elif init_type == 'uniform':
-                nn.init.uniform_(param, a=-std, b=std)
-        
-        # 处理一维的Parameter（如偏置或标量参数）
-        elif param.dim() == 1 and len(param) > 1:  # 长度>1的一维参数
-            if init_type == 'normal':
-                nn.init.normal_(param, mean=mean, std=std)
-            elif init_type == 'uniform':
-                nn.init.uniform_(param, a=-std, b=std)
 
+def init_weights(model, init_type='he', mean=0, std=0.01):
+    '''
+    根据模型层的类型自动选择初始化方法。
+    支持遍历 Conv, Linear, BatchNorm, Embedding 等不同结构。
+    '''
+    
+    def _init_func(m):
+        classname = m.__class__.__name__
+
+        # 1. 处理卷积层 (Conv) 和 全连接层 (Linear)
+        # 这些层通常需要使用 Kaiming, Xavier 或 Normal 初始化
+        if isinstance(m, (nn.Conv1d, nn.Conv2d, nn.Conv3d, nn.Linear, nn.ConvTranspose2d)):
+            if init_type == 'he':
+                # Kaiming 初始化通常用于 ReLU 网络
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif init_type == 'xavier':
+                # Xavier (Glorot) 初始化通常用于 Sigmoid/Tanh 网络
+                nn.init.xavier_normal_(m.weight)
+            elif init_type == 'normal':
+                nn.init.normal_(m.weight, mean=mean, std=std)
+            elif init_type == 'uniform':
+                nn.init.uniform_(m.weight, a=-std, b=std)
+            elif init_type == 'orthogonal':
+                 nn.init.orthogonal_(m.weight)
+            
+            # 自动处理这些层的 bias (如果存在)
+            if hasattr(m, 'bias') and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
+        # 2. 处理归一化层 (BatchNorm, LayerNorm, GroupNorm, InstanceNorm)
+        # 归一化层的权重(gamma)通常初始化为1，偏置(beta)初始化为0
+        # 注意：这里不使用 init_type，因为 BN 层如果不初始化为 1/0 可能会导致模型无法训练
+        elif isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, 
+                            nn.GroupNorm, nn.LayerNorm, nn.InstanceNorm2d)):
+            if m.weight is not None:
+                nn.init.constant_(m.weight, 1.0)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0.0)
+
+        # 3. 处理嵌入层 (Embedding)
+        # Embedding 层通常使用较小的正态分布或均匀分布
+        elif isinstance(m, nn.Embedding):
+            nn.init.normal_(m.weight, mean=0, std=std)
+
+        # 4. 处理 LSTM / GRU (RNN 类)
+        # RNN 的初始化比较特殊，通常对循环权重使用正交初始化
+        elif isinstance(m, (nn.LSTM, nn.LSTMCell, nn.GRU, nn.GRUCell)):
+            for name, param in m.named_parameters():
+                if 'weight_ih' in name:  # Input-Hidden weights
+                    if init_type == 'xavier':
+                        nn.init.xavier_uniform_(param.data)
+                    else: # Default orthogonal often works best for RNNs
+                        nn.init.orthogonal_(param.data)
+                elif 'weight_hh' in name: # Hidden-Hidden weights
+                    nn.init.orthogonal_(param.data)
+                elif 'bias' in name:
+                    nn.init.constant_(param.data, 0)
+                    # LSTM 的 forget gate bias 有时建议初始化为 1 (可选优化)
+    
+    # 使用 PyTorch 的 apply 方法递归遍历所有子模块
+    print(f"Applying {init_type} initialization to {model.__class__.__name__}...")
+    model.apply(_init_func)
+    
 
 
 

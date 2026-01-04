@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import json
 from PIL import Image, ImageFile
 import torch.utils.data.dataset as data
 from torch.utils.data import DataLoader
@@ -8,13 +9,14 @@ from functools import partial
 import matplotlib.pyplot as plt
 import os
 import torch.distributed as dist
+from transformers import AutoTokenizer
 # 允许加载截断的图像
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 # 自定义
 from heltonx.utils.register import DATASETS
 from heltonx.utils.utils import seed_everything, worker_init_fn
 from generation.datasets.preprocess import Transforms
-
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 
@@ -23,50 +25,73 @@ from generation.datasets.preprocess import Transforms
 
 
 @DATASETS.register
-class GenDataset(data.Dataset):      
+class GenCaptionDataset(data.Dataset):      
     '''有监督分类任务对应的数据集读取方式
     '''
-    def __init__(self, img_dir, img_size):    
+    def __init__(self, img_dir, json_data_path, img_size, max_length, tokenizer_cfg_dir):    
         '''__init__() 为默认构造函数，传入数据集类别（训练或测试），以及数据集路径
 
         Args:
-            :param dir:      图像数据集的根目录
-            :param mode:     模式(train/valid)
-            :param img_size: 网络要求输入的图像尺寸
+            dir:               图像数据集的根目录
+            mode:              模式(train/valid)
+            img_size:          网络要求输入的图像尺寸
+            json_data_path:    captions json文件路径(包含对应图像名)
+            max_length:        数据的最大序列长度, 超过会截断, 不足会填充 PAD
+            tokenizer_cfg_dir: 分词模型权重(hf格式)
 
         Returns:
             precision, recall
         '''      
         self.img_dir = img_dir
         self.transform = Transforms(img_size=img_size)
-        # 支持的图像扩展名
-        IMG_EXTS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp')
-        # 递归遍历所有子目录找到所有图像文件
-        self.img_path_list = [
-            os.path.join(root, fname)
-            for root, _, files in os.walk(self.img_dir)
-            for fname in files
-            if fname.lower().endswith(IMG_EXTS)
-        ]
+        # 加载训练好的 HuggingFace 格式的 tokenizer，用于把文本转成 token ids
+        # tokenizer 内部包含词表 / 特殊 token / 编码规则等元数据
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_cfg_dir)
+        self.max_length = max_length
+        # 读取所有 json 数据行（每行是 {"text": "..."}）
+        self.samples = self.load_data(json_data_path)
         # 记录数据集大小
-        self.dataSize = len(self.img_path_list)
-
+        self.dataSize = len(self.samples)
         # 打印数据集信息
         use_ddp = dist.is_initialized()
         if not use_ddp or use_ddp and dist.get_rank() == 0:
             print(f'📄  dataset info: 图像数:{self.__len__()}')
 
 
+    def load_data(self, path):
+        """
+        从 .jsonl 文件中逐行读取数据
+        每一行应是 {"text": "..."} 格式
+        返回一个样本列表
+        """
+        samples = []
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                data = json.loads(line.strip())
+                samples.append(data)
+        return samples
+    
 
     def __getitem__(self, item):  
         '''重载data.Dataset父类方法, 获取数据集中数据内容
         '''   
+        sample = self.samples[item]
+        '''处理图像'''
+        image_path = os.path.join(self.img_dir, sample['image'])
         # 读取图片 (用torchvision.io.read_image读取速度会快一些)
-        img = read_image(self.img_path_list[item]).permute(1,2,0)
+        img = read_image(image_path).permute(1,2,0)
         img = np.array(img)
         # 数据增强
-        img = self.albumAug(img)         
-        return img.transpose(2,0,1)
+        img = self.albumAug(img).transpose(2,0,1) 
+        '''处理文本'''
+        captions = sample['conversations'][1]['content']
+        # 进行tokenize + 截断
+        input_ids = self.tokenizer(captions).input_ids
+        input_ids = input_ids[:self.max_length]
+        # padding补齐
+        input_ids += [self.tokenizer.pad_token_id] * (self.max_length - len(input_ids))
+        caption_tokens = torch.tensor(input_ids, dtype=torch.long).unsqueeze(0)
+        return img, caption_tokens
     
 
     def albumAug(self, img):
@@ -87,12 +112,14 @@ class GenDataset(data.Dataset):
     # 由于检测数据集每张图像上的目标数量不一
     # 因此需要自定义的如何组织一个batch里输出的内容
     def dataset_collate(self, batch):
-        images = []
-        for img in batch:
+        images, caption_tokens = [], []
+        for img, caption_token in batch:
             images.append(img)
+            caption_tokens.append(caption_token)
         # np -> tensor
         images = torch.from_numpy(np.array(images)).type(torch.FloatTensor)
-        return [images]
+        caption_tokens = torch.cat(caption_tokens)
+        return images, caption_tokens
     
 
     # for debug only:
@@ -129,12 +156,14 @@ class GenDataset(data.Dataset):
 if __name__ == '__main__':
 
     # 配置字典
-    img_dir = r'/mnt/yht/data/The_Oxford_IIIT_Pet_Dataset/images'
     cfg = {
         "dataset_cfg": {
-            "type": "GenDataset",
-            "img_dir": img_dir,
-            "img_size": [256, 256]
+            "type": "GenCaptionDataset",
+            "img_dir": r'/mnt/yht/data/celeba_256/train',
+            "img_size": [256, 256],
+            "json_data_path": r'/mnt/yht/data/celeba_256/celeba256_captions_qwen3vlflash_structure.jsonl', 
+            "max_length":768, 
+            "tokenizer_cfg_dir": r'/mnt/yht/code/HeltonPretrain/llm/tokenizer_configs/minimind2'
         },
         "bs": 64,
         "seed": 42,
@@ -148,7 +177,7 @@ if __name__ == '__main__':
     # 输出数据格式
     for epoch in range(1, 10):
         for step, batch in enumerate(train_data_loader):
-            batch_imgs = batch[0]
+            batch_imgs, batch_captions = batch[0], batch[1]
             if step == 0:
                 # 可视化一个batch里的图像
                 train_dataset._vis_GenDataset_batch(epoch, step, batch_imgs)

@@ -42,7 +42,6 @@ class YOLOv5Assigner(nn.Module):
 
             # Returns
                 - output_targets:  分配结果 [[3(每个尺度3个anchor), w, h, 5+cls_num],[...],[...]] 
-
         '''
         '''初始化'''
         # s代表特征图相对原图的下采样率

@@ -1,3 +1,3 @@
-from .eval_utils import GenerationEvalPipeline
+from .eval_utils import GenerationEvalPipeline, ConditionGenerationEvalPipeline
 
-__all__ = ["GenerationEvalPipeline"]
+__all__ = ["GenerationEvalPipeline","ConditionGenerationEvalPipeline"]

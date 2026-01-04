@@ -2,6 +2,7 @@ import torch.nn as nn
 import timm
 import math
 import torch.nn.functional as F
+from transformers import AutoImageProcessor, AutoModel
 
 from heltonx.utils.ckpts_utils import *
 from pretrain.datasets.preprocess import Transforms
@@ -12,28 +13,17 @@ from heltonx.utils.register import MODELS
 
 @MODELS.register
 class DINOv3(nn.Module):
-    """DINOv3(支持多分辨率输入, 分辨率是16的整数倍)
+    """Learning Transferable Visual Models From Natural Language Supervision(CLIP): https://arxiv.org/abs/2103.00020
     """
-    def __init__(self, model_name: str, pretrained=True, load_ckpt=None):
+    def __init__(self, weight_dir):
+        """初始化
+            Args:
+                img_size:      输入图像尺寸
+                pretrain_path: CLIP的权重路径
         """
-        Args:
-            model_name:     str, timm 中模型名称
-            pretrained:     是否加载预训练权重(官方的权重)
-            features_only:  是否去掉分类头，仅保留特征提取层
-            out_layers:     list[int] 或 None, 指定哪些 stage 层输出特征
-            froze_backbone: 是否冻结骨干网络
-            load_ckpt:      是否加载本地预训练权重(自定义权重)
-        """
-        super().__init__()
-        # features_only=True 直接去掉分类头
-        self.dinov3 = timm.create_model(model_name, pretrained=pretrained)
-        # 是否导入权重:
-        if load_ckpt:
-            self.dinov3 = load_state_dict_with_prefix(self.dinov3, load_ckpt, prefixes_to_try=['model.'])
-        self.dinov3.eval()
+        super(DINOv3, self).__init__()
+        self.model = AutoModel.from_pretrained(weight_dir)
 
-        for param in self.dinov3.parameters():
-            param.requires_grad_(False)
 
     def forward(self, x, type='image', *args, **kwargs):
         '''前向, 调用fgclip图像和文本编码器(API接口, 外部调用此方法)
@@ -53,8 +43,9 @@ class DINOv3(nn.Module):
                 img_embs: [B, dim=1280]
         '''
         with torch.no_grad():
-            x = self.dinov3(x) 
-        return x
+            embeddings = self.dinov3(x) 
+            pooled_output = embeddings.pooler_output
+        return pooled_output
 
 
     def _forward_img_dense(self, x):
@@ -66,7 +57,10 @@ class DINOv3(nn.Module):
         '''
         B, C, H, W = x.shape
         with torch.no_grad():
-            x = self.dinov3.forward_features(x) 
+            embeddings = self.model(x)
+            # print(embeddings)
+            # 从索引5开始是为了忽略之前的special_tokens
+            x = embeddings.last_hidden_state
             special_tokens, feature_map = self.split_vit_output(x, H//16, W//16)
         return feature_map
 
@@ -91,7 +85,7 @@ class DINOv3(nn.Module):
         # 后面是 patch tokens，reshape 成 feature map
         patch_tokens = x[:, num_extra_tokens:, :]  # (BS, 256, 1280)
         feature_map = patch_tokens.transpose(1, 2).reshape(B, C, h, w)  # (BS, 1280, 16, 16)
-
+        print(feature_map.shape)
         return special_tokens, feature_map
 
 
@@ -111,16 +105,8 @@ class DINOv3(nn.Module):
         assert 0 <= row < H and 0 <= col < W, f"row={row}, col={col} 超出范围 H={H}, W={W}"
         # 取出目标位置的 embedding，形状 [B, C]
         target = x[:, :, row, col]  
-        # 归一化 target 和 x
-        target_norm = F.normalize(target, dim=-1)  # (B, C)
-        x_norm = F.normalize(x.view(B, C, -1), dim=1)  # (B, C, H*W)
-        # 计算余弦相似度: [B, C] x [B, C, H*W] -> [B, H*W]
-        sim = torch.bmm(target_norm.unsqueeze(1), x_norm).squeeze(1)  
-        # reshape 回特征图
-        sim_map = sim.view(B, H, W)
-
-        return sim_map
-
+        sim = F.cosine_similarity(target.view(B, C, 1), x.view(B, C, -1)).view(B, H, W)
+        return sim
 
 
 
@@ -132,28 +118,28 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import numpy as np
 
+
     # 设置设备
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    img_size = [1024, 1024]
+    img_size = [1024,1024]
     # 加载模型
-    img_dir = '/mnt/yht/data/The_Oxford_IIIT_Pet_Dataset/images/train'
-    # model = DINOv3("vit_huge_plus_patch16_dinov3.lvd1689m", pretrained=False, load_ckpt='ckpts/backbone_vit_huge_plus_patch16_dinov3.lvd1689m.pt').to(device)
-    model = DINOv3("vit_large_patch16_dinov3.sat493m", pretrained=True, load_ckpt=None).to(device)
-    # model = DINOv3("vit_small_patch16_dinov3.lvd1689m", pretrained=False, load_ckpt='ckpts/vit_small_patch16_dinov3.lvd1689m.pt').to(device)
-    # model = DINOv3("vit_small_patch16_dinov3.lvd1689m", pretrained=True, load_ckpt=None).to(device)
-    print(model)
+    # model = DINOv3(weight_dir=r"ckpts\hugging_face\vit_large_patch16_dinov3_sat493m").to(device)
+    # model = DINOv3(weight_dir=r"ckpts\hugging_face\vit_small_patch16_dinov3_lvd1689m").to(device)
+    # model = DINOv3(weight_dir=r"ckpts\hugging_face\vit_base_patch16_dinov3_lvd1689m").to(device)
+    model = DINOv3(weight_dir=r"ckpts\hugging_face\vit_large_patch16_dinov3_lvd1689m").to(device)
+    # print(model)
     # 加载图像
-    img_path = rf"detection/demos/12.jpg"
+    img_path = r"F:\Desktop\master\datasets\RemoteSensing\DOTA-1.0-1.5_ss_size-1024_gap-200\trainval\images\P2751__1024__824___824.png"
     image = np.array(Image.open(img_path).convert('RGB'))
     # 图像预处理
     transform = Transforms(img_size)
     tensor_img = torch.tensor(transform.valid_transform(image=image)['image']).permute(2,0,1).unsqueeze(0).to(device)
     # 获取特征图
     feature_map = model.forward(tensor_img, type='image_dense')
-    print(feature_map.mean(), feature_map.std())
     # 计算指定位置的注意力热力图
-    row, col = 46, 43
+    row, col = 34, 7
     heatmap = model.cosine_similarity_map(feature_map, row, col).squeeze(0).cpu().numpy()
+    print(heatmap.min(),  heatmap.max())
     # 创建子图布局，左侧显示原始图像，右侧显示热力图
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
 
@@ -162,7 +148,7 @@ if __name__ == '__main__':
     axes[0].set_title("Original Image", fontsize=14, fontweight="bold")
     axes[0].axis("off")
     # 右侧：显示热力图
-    heatmap_display = axes[1].imshow(heatmap, cmap='jet')
+    heatmap_display = axes[1].imshow(heatmap, vmin=0.0, vmax=1.0, cmap='jet')
     axes[1].set_title("Heatmap", fontsize=14, fontweight="bold")
     axes[1].text(
         col, row, "+",
