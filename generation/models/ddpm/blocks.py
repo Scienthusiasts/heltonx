@@ -46,6 +46,7 @@ class Block(nn.Module):
 
         if exists(scale_shift):
             # 在通道维度上做time_embedding
+            # 这种做法比直接x+time_emb更高级，相当于改变的是特征的均值和方差
             scale, shift = scale_shift
             x = x * (scale + 1) + shift
 
@@ -74,7 +75,7 @@ class Residual(nn.Module):
     
 
 class ResnetBlock(nn.Module):
-    """基于 https://arxiv.org/abs/1512.03385 的改进"""
+    """基于 https://arxiv.org/abs/1512.03385 (resnet) 的改进"""
 
     def __init__(self, dim, dim_out, *, time_emb_dim=None, groups=8):
         super().__init__()

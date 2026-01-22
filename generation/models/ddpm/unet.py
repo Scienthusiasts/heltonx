@@ -5,7 +5,7 @@ from torch import nn, einsum
 import torch.nn.functional as F
 
 from generation.utils.utils import *
-from generation.models.blocks import *
+from generation.models.ddpm.blocks import *
 from heltonx.utils.register import MODELS
 
 
@@ -71,7 +71,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    """UNet Decoder, 包含三个结构(解码层, 输出层)
+    """UNet Decoder, 包含两个结构(解码层, 输出层)
     """
     def __init__(self, output_dim, layer_dims, time_dim, resnet_block_groups=4):
         """

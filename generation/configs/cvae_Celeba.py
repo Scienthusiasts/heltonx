@@ -15,7 +15,7 @@ lr_decay = 1e-1
 load_ckpt = None
 log_interval = 50
 eval_interval = 5
-resume = None
+resume = 'log/cvae_Celeba_train_ddp/2026-01-21-01-45-07_train_ddp/train_epoch995.pt'
 # 梯度裁剪策略
 grad_clip=1.0
 

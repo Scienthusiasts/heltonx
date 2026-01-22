@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from heltonx.utils.register import MODELS
 from heltonx.utils.utils import init_weights
-from generation.models.blocks import *
 
 
 

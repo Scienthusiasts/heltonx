@@ -3,9 +3,9 @@ mode = 'train_ddp'
 seed = 42
 log_dir = r'./log/ddpm_unet_Celeba_train_ddp'
 img_size = [128, 128]
-dim = 128
+dim = 32
 epoch = 1000
-bs = 16
+bs = 32
 lr = 2e-4
 warmup_lr = lr*1e-2
 lr_decay = 1e-1
@@ -31,7 +31,7 @@ model_cfgs = dict(
         input_dim=3,
         output_dim=3,
         # 配置 encoder / decoder 每一层的通道数
-        layer_dims=[dim*1, dim*1, dim*2, dim*4],
+        layer_dims=[dim*1, dim*1, dim*2, dim*2, dim*4, dim*8],
     )
 )
 '''数据集配置参数'''

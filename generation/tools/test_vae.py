@@ -19,7 +19,7 @@ from heltonx.utils.register import MODELS
 
 
 
-def gen_batch_sample_ddpm(model, bs, log_dir):
+def gen_batch_sample(model, bs, log_dir):
 
     # 图像均值 标准差
     mean = [0.48145466, 0.4578275, 0.40821073]
@@ -32,7 +32,7 @@ def gen_batch_sample_ddpm(model, bs, log_dir):
     generate_images = samples
     B, C, H, W = generate_images.shape
     size = int(bs**0.5)
-    fig, axes = plt.subplots(size, size, figsize=(10, 10))  # Create an 8x8 grid of subplots
+    fig, axes = plt.subplots(size, size, figsize=(10, 10))  
     for i, ax in enumerate(axes.flat):
         gen_img_norm = generate_images[i].reshape(C, H, W).transpose((1,2,0))
         # figtest = reverse_transform(torch.from_numpy(generate_image))
@@ -44,6 +44,29 @@ def gen_batch_sample_ddpm(model, bs, log_dir):
     plt.savefig(os.path.join(log_dir, f"gen_samples_vae.png"), dpi=200)
 
 
+
+
+def reconstruct_one_sample(device, model, img_path, img_size, log_dir):
+    # 图像均值 标准差
+    mean = np.array([0.485, 0.456, 0.406]) 
+    std = np.array([[0.229, 0.224, 0.225]]) 
+    transform = Transforms(img_size=img_size)
+    image = np.array(Image.open(img_path).convert('RGB'))
+    tensor_img = torch.tensor(transform.transform(image=image)['image'])
+    tensor_img = tensor_img.permute(2,0,1).unsqueeze(0).to(device)
+
+    # 图像生成
+    rec_img = model.reconstruct(img=tensor_img).squeeze(0).permute(1,2,0)
+    rec_img = ((rec_img.cpu().numpy() * std + mean) * 255).astype(np.uint8)
+    # 可视化
+    fig, axes = plt.subplots(1,2, figsize=(10, 5))  
+    axes[0].imshow(image) 
+    axes[0].axis("off")  
+    axes[1].imshow(rec_img) 
+    axes[1].axis("off")  
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(log_dir, f"reconstruct_vae.png"), dpi=200)
 
 
 
@@ -67,7 +90,13 @@ if __name__ == '__main__':
     model = MODELS.build_from_cfg(model_cfgs).to(device)
     model.eval()
 
-    gen_batch_sample_ddpm(model, bs, log_dir)
+
+    # 图像生成
+    # gen_batch_sample(model, bs, log_dir)
+
+    # 图像复原
+    img_path = r'/mnt/yht/data/celeba_256/train/14110.jpg'
+    reconstruct_one_sample(device, model, img_path, img_size, log_dir)
 
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0,2
 # export CUDA_VISIBLE_DEVICES=2,3
 # export CUDA_VISIBLE_DEVICES=0,1,3
 # export CUDA_VISIBLE_DEVICES=0,3
@@ -22,14 +22,14 @@ cd /mnt/yht/code/HeltonPretrain
 
 
 # ddpm_unet_Celeba
-# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
-#     generation/tools/train_accelerate.py \
-#     --config generation/configs/ddpm_unet_Celeba_ddp.py
-
-# cvae_Celeba
 PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
     generation/tools/train_accelerate.py \
-    --config generation/configs/cvae_Celeba_ddp.py
+    --config generation/configs/ddpm_unet_Celeba_ddp.py
+
+# cvae_Celeba
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     generation/tools/train_accelerate.py \
+#     --config generation/configs/cvae_Celeba_ddp.py
 
 
 # 单卡(训练)

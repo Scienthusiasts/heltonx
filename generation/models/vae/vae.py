@@ -4,7 +4,7 @@ from functools import partial
 from heltonx.utils.register import MODELS
 from heltonx.utils.utils import init_weights
 from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
-from generation.models.blocks import *
+import torch.nn.functional as F
 
 
 
@@ -61,6 +61,7 @@ class Decoder(nn.Module):
                     nn.ConvTranspose2d(dims[i], dims[i+1], kernel_size=3, stride=2, padding=1, output_padding=1),
                     nn.BatchNorm2d(dims[i+1]),
                     nn.LeakyReLU(0.2, inplace=True),
+                    # 比编码器多一些参数
                     nn.Conv2d(dims[i+1], dims[i+1], kernel_size=3, stride=1, padding=1),
                     nn.BatchNorm2d(dims[i+1]),
                     nn.LeakyReLU(0.2, inplace=True),
@@ -121,7 +122,7 @@ class VAE(nn.Module):
 
     def reparameterize(self, mu, log_var):
         # 显式截断 log_var，防止 exp() 爆炸
-        # 限制 log_var 在 [-10, 10] 之间，对应的 std 范围是 [0.006, 148]
+        # 限制 log_var 在 [-10, 10] 之间 
         log_var = torch.clamp(log_var, min=-10.0, max=10.0)
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
@@ -239,6 +240,33 @@ class VAE(nn.Module):
     #     samples = self.decoder(z_reshaped)
 
     #     return samples.detach().float().cpu().numpy()
+
+
+
+    def reconstruct(self, img, bs=1):
+        """前向/损失
+            Args:
+                img: 输入图像 [B, C, H, W]
+                bs:  采样的batch size
+        """
+        with torch.no_grad():
+            x = img
+            '''编码器 [B, C, H, W] -> [B, flat_dim]'''
+            flat_feat = self.encoder(x).view(bs, -1)
+            
+            '''生成latent vector'''
+            mu = self.fc_mu(flat_feat)
+            # log_var = self.fc_var(flat_feat)
+            # 重参数采样(根据encoder特征的μ和σ采样高斯噪声)
+            # z = self.reparameterize(mu, log_var)
+            z = mu
+
+            '''解码器'''
+            # [bs, latent] -> [bs, flat_dim] -> [bs, C, H, W]
+            z_proj = self.fc_decoder(z).view(bs, self.last_channels, self.feat_h, self.feat_w)
+            # [bs, C, H, W]-> [bs, 3, img_H, img_W]
+            recons = self.decoder(z_proj)
+            return recons
 
 
 

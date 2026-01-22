@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from functools import partial
 from heltonx.utils.register import MODELS
 from heltonx.utils.utils import init_weights
 from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
-from generation.models.blocks import *
 
 
 
@@ -251,6 +251,7 @@ class CVAE(nn.Module):
 
     def init_weights(self):
         """权重初始化方法
+        
         """
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):

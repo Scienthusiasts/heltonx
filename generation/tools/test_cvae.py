@@ -19,7 +19,7 @@ from heltonx.utils.register import MODELS
 
 
 
-def gen_batch_sample_ddpm(model, bs, tokenizer_cfg_dir, log_dir, prompt, max_tokens_len=768):
+def gen_batch_sample(model, bs, tokenizer_cfg_dir, log_dir, prompt, max_tokens_len=768):
     '''prompt相关'''
     # 加载训练好的 HuggingFace 格式的 tokenizer，用于把文本转成 token ids
     # tokenizer 内部包含词表 / 特殊 token / 编码规则等元数据
@@ -60,10 +60,10 @@ def gen_batch_sample_ddpm(model, bs, tokenizer_cfg_dir, log_dir, prompt, max_tok
 
 
 if __name__ == '__main__':
-    load_ckpt = 'log/cvae_Celeba_train/2025-12-28-01-16-31_train/last.pt'
+    load_ckpt = 'log/cvae_Celeba_train_ddp/2026-01-21-01-45-07_train_ddp/last.pt'
     # load_ckpt = 'log/cvae_Celeba_train/2025-12-27-23-06-19_train/last.pt'
     tokenizer_cfg_dir = '/mnt/yht/code/HeltonPretrain/llm/tokenizer_configs/minimind2'
-    prompt = '是一位男性，肤色属于白种人，从面部轮廓和皱纹来看，他大概处于中年阶段。脸型偏方，下巴线条分明，整体轮廓显得硬朗。他的眼神专注而严肃，嘴唇微抿，似乎正沉浸在演唱或讲话中，没有明显的微笑或其他情绪波动。头发较长，略显凌乱，颜色是深棕色带些灰白，自然垂在额前和耳际。他留着浓密的胡须，胡子覆盖了整个下巴和脸颊，呈络腮胡样式，增添了几分粗犷气质。头上戴着一顶浅灰色牛仔帽，帽檐压得较低，帽身上还点缀着几颗红色小铆钉，为整体造型添了一抹西部风格。他的眼睛虹膜是深褐色，在光线照射下显得沉稳有力。拍摄视角是正面略微偏侧，能清晰看到他的面部表情和帽子细节。背景模糊不清，似乎是户外环境，隐约可见浅色天空或幕布，暗示可能是在一个露天演出或活动现场。人物没有明显化妆痕迹，妆容自然，符合现场表演的真实状态。整体画面传递出一种质朴、坚毅又略带沧桑的氛围。'
+    prompt = '性别: [男性] | 族裔: [白种人] | 年龄段: [中年] | 脸型: [瓜子脸] | 表情: [严肃] | 头发长短: [短发] | 发型: (背头) | 发色: [棕色] | 穿戴配饰: (眼镜) | 虹膜颜色: [蓝色] | 胡须样式: [短胡茬] | 妆容: [未化妆] | 拍摄视角: [侧脸] | 人物背景: [深色背景]'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     log_dir = "./"
     img_size = [256, 256]
@@ -87,7 +87,7 @@ if __name__ == '__main__':
         emb_dim=dim*4, 
         n_layers=4, 
         heads=8, 
-        max_len=768, 
+        max_len=192, 
         dropout=0.0
         ),
         load_ckpt=load_ckpt
@@ -95,7 +95,7 @@ if __name__ == '__main__':
     model = MODELS.build_from_cfg(model_cfgs).to(device)
     model.eval()
 
-    gen_batch_sample_ddpm(model, bs, tokenizer_cfg_dir, log_dir, prompt, max_tokens_len=768)
+    gen_batch_sample(model, bs, tokenizer_cfg_dir, log_dir, prompt, max_tokens_len=192)
 
 
 

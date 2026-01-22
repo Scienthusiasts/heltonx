@@ -4,7 +4,7 @@ from functools import partial
 from heltonx.utils.register import MODELS
 from heltonx.utils.utils import init_weights
 from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
-from generation.models.blocks import *
+import torch.nn.functional as F
 
 
 
