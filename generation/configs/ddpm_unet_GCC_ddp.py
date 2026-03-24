@@ -1,29 +1,38 @@
-trainset_path = r'/mnt/yht/data/celeba_256'
-mode = 'train'
+trainset_path = r'/mnt/yht/data/vlm/pretrain_images'
+mode = 'train_ddp'
 seed = 42
-log_dir = r'./log/vae_Celeba_train'
-img_size = [256, 256]
-dim = 32
-epoch = 1000
-bs = 64
-lr = 5e-4
+log_dir = r'./log/ddpm_unet_GCC_train_ddp'
+img_size = [128, 128]
+dim = 128
+epoch = 50
+bs = 28
+lr = 2e-4
 warmup_lr = lr*1e-2
 lr_decay = 1e-1
 load_ckpt = None
 log_interval = 50
-eval_interval = 10
+eval_interval = 1
 resume = None
-# 梯度裁剪策略
-grad_clip=1.0
+
 
 '''模型配置参数'''
 model_cfgs = dict(
-    type='VAE',   
-    input_dim=3,
-    layer_dims=[dim, dim*2, dim*4, dim*4, dim*8, dim*8],  
-    latent_dim=dim*32,
+    type="DDPM",
     img_size=img_size,
-    kld_weight=1e-5  # 2e-4
+    batch_size=bs,
+    load_ckpt=load_ckpt,
+    schedule_name="linear_beta_schedule",
+    timesteps=1000,
+    beta_start=0.0001,
+    beta_end=0.02,
+    loss_type='huber',
+    denoise_model=dict(
+        type="UNet",
+        input_dim=3,
+        output_dim=3,
+        # 配置 encoder / decoder 每一层的通道数
+        layer_dims=[dim*1, dim*1, dim*2, dim*4],
+    )
 )
 '''数据集配置参数'''
 dataset_cfgs=dict(

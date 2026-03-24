@@ -35,7 +35,8 @@ class Encoder(nn.Module):
         self.encode_layers = nn.Sequential(*modules)
 
     def forward(self, x):
-        return self.encode_layers(x)
+        x = self.encode_layers(x)
+        return x
 
 
 

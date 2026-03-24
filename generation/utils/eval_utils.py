@@ -26,8 +26,10 @@ class GenerationEvalPipeline():
         log_dir = runner.log_dir
 
         # 图像均值 标准差
-        mean = np.array([0.485, 0.456, 0.406]) 
-        std = np.array([[0.229, 0.224, 0.225]]) 
+        # mean = np.array([0.485, 0.456, 0.406]) 
+        # std = np.array([[0.229, 0.224, 0.225]]) 
+        mean = np.array(runner.train_dataset.img_mean)
+        std = np.array(runner.train_dataset.img_std).reshape(1, -1)
 
         model.eval()
         # 图像生成
@@ -35,12 +37,9 @@ class GenerationEvalPipeline():
 
         # 可视化
         generate_images = samples
-        B, C, H, W = generate_images.shape
-        print(generate_images.shape)
         fig, axes = plt.subplots(8, 8, figsize=(10, 10))  # Create an 8x8 grid of subplots
         for i, ax in enumerate(axes.flat):
-            gen_img_norm = generate_images[i].reshape(C, H, W).transpose((1,2,0))
-            # figtest = reverse_transform(torch.from_numpy(generate_image))
+            gen_img_norm = generate_images[i].transpose((1,2,0))
             gen_img = gen_img_norm * std + mean
             ax.imshow(gen_img) 
             ax.axis("off")  

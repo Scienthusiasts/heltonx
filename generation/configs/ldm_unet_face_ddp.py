@@ -1,29 +1,45 @@
-trainset_path = r'/mnt/yht/data/celeba_256'
-mode = 'train'
+trainset_path = r'/mnt/yht/data/face_256'
+mode = 'train_ddp'
 seed = 42
-log_dir = r'./log/vae_Celeba_train'
+log_dir = r'./log/ldm_unet_face_train_ddp'
 img_size = [256, 256]
-dim = 32
-epoch = 1000
-bs = 64
-lr = 5e-4
+dim = 128
+latent_dim = 16
+epoch = 400
+bs = 32
+lr = 2e-4
 warmup_lr = lr*1e-2
 lr_decay = 1e-1
 load_ckpt = None
 log_interval = 50
-eval_interval = 10
+eval_interval = 4
 resume = None
-# 梯度裁剪策略
-grad_clip=1.0
+
 
 '''模型配置参数'''
 model_cfgs = dict(
-    type='VAE',   
-    input_dim=3,
-    layer_dims=[dim, dim*2, dim*4, dim*4, dim*8, dim*8],  
-    latent_dim=dim*32,
+    type="LDM",
+    vae=dict(
+        type='HFVAE',
+        weight_dir='ckpts/hugging_face/vae-kl-f8-d16',
+        latent_dim=latent_dim,
+        down_scale=8,
+    ),
     img_size=img_size,
-    kld_weight=1e-5  # 2e-4
+    batch_size=bs,
+    load_ckpt=load_ckpt,
+    schedule_name="linear_beta_schedule",
+    timesteps=1000,
+    beta_start=0.0001,
+    beta_end=0.02,
+    loss_type='huber',
+    denoise_model=dict(
+        type="UNet",
+        input_dim=latent_dim,
+        output_dim=latent_dim,
+        # 配置 encoder / decoder 每一层的通道数
+        layer_dims=[dim*1, dim*1, dim*2, dim*4],
+    )
 )
 '''数据集配置参数'''
 dataset_cfgs=dict(
@@ -31,6 +47,8 @@ dataset_cfgs=dict(
         type="GenDataset",
         img_dir=trainset_path,
         img_size=img_size,
+        img_mean=[0.5, 0.5, 0.5], 
+        img_std=[0.5, 0.5, 0.5]
     ),
     valid_dataset_cfg=None,
     train_bs=bs,

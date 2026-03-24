@@ -3,7 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 
 from generation.utils.utils import *
-from generation.models.blocks import *
+from generation.models.unet.blocks import *
 from generation.utils.var_schedule import *
 from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
 from heltonx.utils.register import MODELS

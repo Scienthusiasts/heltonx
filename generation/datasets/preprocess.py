@@ -11,10 +11,15 @@ class Transforms():
     '''数据预处理/数据增强(基于albumentations库)
        https://albumentations.ai/docs/api_reference/full_reference/
     '''
-    def __init__(self, img_size):
+    def __init__(self, img_size, img_mean=(0.485, 0.456, 0.406), img_std=(0.229, 0.224, 0.225)):
+        self.img_mean = img_mean
+        self.img_std = img_std        
+        # VAE(vae-kl-f8-d16):
+        # self.img_mean = (0.5, 0.5, 0.5)
+        # self.img_std = (0.5, 0.5, 0.5)
         # OpenAI-CLIP:
-        self.img_mean = (0.48145466, 0.4578275, 0.40821073)
-        self.img_std = (0.26862954, 0.26130258, 0.27577711)
+        # self.img_mean = (0.48145466, 0.4578275, 0.40821073)
+        # self.img_std = (0.26862954, 0.26130258, 0.27577711)
         # DINOv3 LVD-1689M:
         # self.img_mean = (0.485, 0.456, 0.406)
         # self.img_std = (0.229, 0.224, 0.225)

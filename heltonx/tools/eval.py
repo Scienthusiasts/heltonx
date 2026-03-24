@@ -35,16 +35,18 @@ class Evaler():
         self.model = MODELS.build_from_cfg(model_cfgs).to(self.device)
 
         '''导入数据集'''
-        self.valid_dataset = DATASETS.build_from_cfg(dataset_cfgs["valid_dataset_cfg"])
-        self.valid_dataloader = DataLoader(
-            dataset=self.valid_dataset,
-            batch_size=dataset_cfgs["valid_bs"],
-            num_workers=dataset_cfgs["num_workers"],
-            shuffle=dataset_cfgs["valid_shuffle"],
-            collate_fn=self.valid_dataset.dataset_collate,
-            worker_init_fn=partial(worker_init_fn, seed=self.seed),
-            pin_memory=True # CPU → GPU 数据拷贝速度加速
-        )
+        # 有的任务可能无需读取数据集比如图像生成
+        if dataset_cfgs["valid_dataset_cfg"]:
+            self.valid_dataset = DATASETS.build_from_cfg(dataset_cfgs["valid_dataset_cfg"])
+            self.valid_dataloader = DataLoader(
+                dataset=self.valid_dataset,
+                batch_size=dataset_cfgs["valid_bs"],
+                num_workers=dataset_cfgs["num_workers"],
+                shuffle=dataset_cfgs["valid_shuffle"],
+                collate_fn=self.valid_dataset.dataset_collate,
+                worker_init_fn=partial(worker_init_fn, seed=self.seed),
+                pin_memory=True # CPU → GPU 数据拷贝速度加速
+            )
 
         '''日志模块'''
         self.runner_logger = RunnerLogger('eval', self.log_dir, 1, 1, 1, 1)

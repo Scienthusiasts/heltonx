@@ -22,9 +22,15 @@ cd /mnt/yht/code/HeltonPretrain
 
 
 # ddpm_unet_Celeba
-PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
-    generation/tools/train_accelerate.py \
-    --config generation/configs/ddpm_unet_Celeba_ddp.py
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     generation/tools/train_accelerate.py \
+#     --config generation/configs/ddpm_unet_Celeba_ddp.py
+
+# ddpm_unet_GCC
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     generation/tools/train_accelerate.py \
+#     --config generation/configs/ddpm_unet_GCC_ddp.py
+
 
 # cvae_Celeba
 # PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
@@ -32,10 +38,16 @@ PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file helto
 #     --config generation/configs/cvae_Celeba_ddp.py
 
 
+# ldm_unet_Celeba
+PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+    generation/tools/train_accelerate.py \
+    --config generation/configs/ldm_unet_face_ddp.py
+
+
 # 单卡(训练)
-# CUDA_VISIBLE_DEVICES=0 PYTHONPATH=. accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_single_gpu.yaml ./generation/tools/train_accelerate.py --config generation/configs/cvae_Celeba.py
+# CUDA_VISIBLE_DEVICES=3 PYTHONPATH=. accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_single_gpu.yaml ./generation/tools/train_accelerate.py --config generation/configs/vae_Celeba.py
 # CUDA_VISIBLE_DEVICES=1 PYTHONPATH=. accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_single_gpu.yaml ./generation/tools/train_accelerate.py --config generation/configs/vqvae_pixelcnn_Celeba.py
 # 验证:
-# python -m detection.tools.eval --config detection/configs/yolov5_coco_eval.py
+# python -m generation.tools.eval --config generation/configs/ddpm_unet_Celeba_eval.py
 # 推理:
 # python -m detection.tools.test

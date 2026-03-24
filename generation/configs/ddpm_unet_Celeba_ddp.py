@@ -1,4 +1,4 @@
-trainset_path = r'/mnt/yht/data/celeba_256'
+trainset_path = r'/mnt/yht/data/face_256/celeba_256/train'
 mode = 'train_ddp'
 seed = 42
 log_dir = r'./log/ddpm_unet_Celeba_train_ddp'

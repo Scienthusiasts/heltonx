@@ -1,5 +1,5 @@
-trainset_path = r'/mnt/yht/data/celeba_256/train'
-json_data_path = r'/mnt/yht/data/celeba_256/celeba256_captions_qwen3vlflash_structure.jsonl'
+trainset_path = r'/mnt/yht/data/face_256/celeba_256/train'
+json_data_path = r'/mnt/yht/data/face_256/celeba256_captions_qwen3vlflash_structure.jsonl'
 tokenizer_cfg_dir = r'/mnt/yht/code/HeltonPretrain/llm/tokenizer_configs/minimind2'
 
 mode = 'train'

@@ -5,7 +5,7 @@ from torch import nn, einsum
 import torch.nn.functional as F
 
 from generation.utils.utils import *
-from generation.models.ddpm.blocks import *
+from generation.models.unet.blocks import *
 from heltonx.utils.register import MODELS
 
 

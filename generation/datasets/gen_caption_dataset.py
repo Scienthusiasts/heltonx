@@ -28,7 +28,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 class GenCaptionDataset(data.Dataset):      
     '''有监督分类任务对应的数据集读取方式
     '''
-    def __init__(self, img_dir, json_data_path, img_size, max_length, tokenizer_cfg_dir):    
+    def __init__(self, img_dir, json_data_path, img_size, max_length, tokenizer_cfg_dir, img_mean=[0.485, 0.456, 0.406], img_std=[0.229, 0.224, 0.225]):    
         '''__init__() 为默认构造函数，传入数据集类别（训练或测试），以及数据集路径
 
         Args:
@@ -38,12 +38,16 @@ class GenCaptionDataset(data.Dataset):
             json_data_path:    captions json文件路径(包含对应图像名)
             max_length:        数据的最大序列长度, 超过会截断, 不足会填充 PAD
             tokenizer_cfg_dir: 分词模型权重(hf格式)
+            img_mean:          归一化的图像均值
+            img_std:           归一化的图像标准差
 
         Returns:
             precision, recall
         '''      
+        self.img_mean = img_mean
+        self.img_std = img_std
         self.img_dir = img_dir
-        self.transform = Transforms(img_size=img_size)
+        self.transform = Transforms(img_size, self.img_mean, self.img_std)
         # 加载训练好的 HuggingFace 格式的 tokenizer，用于把文本转成 token ids
         # tokenizer 内部包含词表 / 特殊 token / 编码规则等元数据
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_cfg_dir)

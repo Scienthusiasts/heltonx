@@ -10,19 +10,29 @@ from heltonx.utils.register import MODELS
 
 
 @MODELS.register
-class DDPM(nn.Module):
+class LDM(nn.Module):
 
     def __init__(self,
+                 vae,
                  denoise_model,
                  img_size,
-                 batch_size, 
+                 batch_size,
                  load_ckpt=None, 
                  schedule_name="linear_beta_schedule",
                  loss_type='huber',
                  timesteps=1000,
                  beta_start=0.0001,
                  beta_end=0.02):
-        super(DDPM, self).__init__()
+        super(LDM, self).__init__()
+        # 潜空间扩散需要VAE将潜空间特征复原到图像空间
+        self.vae = vae.eval()
+        # latent space 的维度和 vae的下采样率
+        self.latent_dim = self.vae.latent_dim
+        self.down_scale = self.vae.down_scale
+        # 扩散在潜空间进行, 因此图像大小是潜空间特征的大小
+        img_size[0] //= self.vae.down_scale
+        img_size[1] //= self.vae.down_scale
+
         self.loss_type = loss_type
         self.denoise_model = denoise_model
         self.img_size = img_size
@@ -245,7 +255,7 @@ class DDPM(nn.Module):
             batch_t_prev = torch.full((b,), t_prev, device=device, dtype=torch.long)
 
             img = self.ddim_p_sample(img, batch_t, batch_t_prev, eta=eta)
-            imgs.append(img.cpu().numpy())
+            imgs.append(img)
 
         return imgs
 
@@ -255,47 +265,48 @@ class DDPM(nn.Module):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
     @torch.no_grad()
-    def sample(self, bs=None, channels=3):
+    def sample(self, bs=None):
         bs = bs if bs else self.bs
         # DDPM 采样:
         # denoise_img_series = self.p_sample_loop(shape=(bs, channels, self.img_size[0], self.img_size[1]))
         # DDIM 采样:
         # eta=0 完全确定性 DDIM(通常用于快速、稳定采样) / eta>0 引入部分随机性, 最后会退回到 DDPM 的随机性(eta=1 时近似随机)
-        denoise_img_series = self.ddim_p_sample_loop(shape=(bs, channels, self.img_size[0], self.img_size[1]), ddim_steps=50, eta=0.0)
+        denoise_img_series = self.ddim_p_sample_loop(shape=(bs, self.latent_dim, self.img_size[0], self.img_size[1]), ddim_steps=50, eta=0.0)
         return denoise_img_series
 
 
 
 
     def forward(self, batch_data=None, return_loss=True, bs=None):
-        """前向+计算损失
+        """前向+计算损失 (LDM只修改这里)
         """
         if return_loss:
             y = batch_data[0]
             bs = y.shape[0]
+
+            # 调用 VAE 的 forward 提取潜特征 
+            z_0 = self.vae(x=y, return_loss=True)
+            
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
             t = torch.randint(0, self.timesteps, (bs,), device=y.device).long()
-            loss = self.compute_loss(x_start=y, t=t, loss_type=self.loss_type)
+            # 计算损失时也是在潜空间计算
+            loss = self.compute_loss(x_start=z_0, t=t, loss_type=self.loss_type)
+
             # 字典形式
             losses = dict(
                 gen_loss = loss
             )
             return losses
         else:
-            # [-1]是只取最后一个time_step
-            return self.sample(bs=bs)[-1]
+            # 在潜空间中进行采样，获取去噪完成的特征序列
+            latent_series = self.sample(bs=bs)
+            # 提取最后一步去噪完成的潜特征, [-1]是只取最后一个time_step 
+            final_latent = latent_series[-1]  
+            print(final_latent.shape)
+            # 潜空间 -> 图像空间
+            gen_img = self.vae.decode(final_latent).float().cpu().numpy()
+            return gen_img
 
 
 

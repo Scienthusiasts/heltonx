@@ -26,19 +26,23 @@ from generation.datasets.preprocess import Transforms
 class GenDataset(data.Dataset):      
     '''有监督分类任务对应的数据集读取方式
     '''
-    def __init__(self, img_dir, img_size):    
+    def __init__(self, img_dir, img_size, img_mean=[0.485, 0.456, 0.406], img_std=[0.229, 0.224, 0.225]):    
         '''__init__() 为默认构造函数，传入数据集类别（训练或测试），以及数据集路径
 
         Args:
-            :param dir:      图像数据集的根目录
-            :param mode:     模式(train/valid)
-            :param img_size: 网络要求输入的图像尺寸
+            dir:      图像数据集的根目录
+            mode:     模式(train/valid)
+            img_size: 网络要求输入的图像尺寸
+            img_mean: 归一化的图像均值
+            img_std:  归一化的图像标准差
 
         Returns:
             precision, recall
         '''      
+        self.img_mean = img_mean
+        self.img_std = img_std
         self.img_dir = img_dir
-        self.transform = Transforms(img_size=img_size)
+        self.transform = Transforms(img_size, self.img_mean, self.img_std)
         # 支持的图像扩展名
         IMG_EXTS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp')
         # 递归遍历所有子目录找到所有图像文件

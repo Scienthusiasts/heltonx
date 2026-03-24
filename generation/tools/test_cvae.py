@@ -63,7 +63,7 @@ if __name__ == '__main__':
     load_ckpt = 'log/cvae_Celeba_train_ddp/2026-01-21-01-45-07_train_ddp/last.pt'
     # load_ckpt = 'log/cvae_Celeba_train/2025-12-27-23-06-19_train/last.pt'
     tokenizer_cfg_dir = '/mnt/yht/code/HeltonPretrain/llm/tokenizer_configs/minimind2'
-    prompt = '性别: [男性] | 族裔: [白种人] | 年龄段: [中年] | 脸型: [瓜子脸] | 表情: [严肃] | 头发长短: [短发] | 发型: (背头) | 发色: [棕色] | 穿戴配饰: (眼镜) | 虹膜颜色: [蓝色] | 胡须样式: [短胡茬] | 妆容: [未化妆] | 拍摄视角: [侧脸] | 人物背景: [深色背景]'
+    prompt = '性别: [男性] | 族裔: [黑种人] | 年龄段: [中年] | 脸型: [瓜子脸] | 表情: [严肃] | 头发长短: [短发] | 发型: (寸头) | 发色: [棕色] | 穿戴配饰: (无) | 虹膜颜色: [棕色] | 胡须样式: [短胡茬] | 妆容: [未化妆] | 拍摄视角: [正脸] | 人物背景: [深色背景]'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     log_dir = "./"
     img_size = [256, 256]
