@@ -88,14 +88,13 @@ class Trainer():
         '''优化器'''
         self.optimizer = self.accelerator.prepare(OPTIMIZERS.build_from_cfg(optimizer_cfgs, params=self.model.parameters()))
         # 学习率衰减策略(+warmup)
-        scheduler_cfgs["base_schedulers_cfgs"]["step_size"] *= self.train_batch_num
-        scheduler_cfgs["warmup_schedulers_cfgs"]["warmup_epochs"] *= self.train_batch_num
         base_scheduler = SCHEDULERS.build_from_cfg(scheduler_cfgs["base_schedulers_cfgs"], optimizer=self.optimizer)
         self.scheduler = self.accelerator.prepare(
             SCHEDULERS.build_from_cfg(
                 scheduler_cfgs["warmup_schedulers_cfgs"], 
                 base_scheduler=base_scheduler, 
-                optimizer=self.optimizer
+                optimizer=self.optimizer,
+                batch_num=self.train_batch_num
         ))
 
         '''日志模块'''
@@ -181,7 +180,7 @@ class Trainer():
             '''一个batch的训练'''
             self.fit_batch(batch_datas)
             # 一个batch结束后更新学习率
-            self.scheduler.step() 
+            self.scheduler.step(epoch=self.cur_epoch, batch=step) 
 
         self.call_hooks("after_epoch", runner=self)
 

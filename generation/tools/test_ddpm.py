@@ -8,7 +8,6 @@ from PIL import Image, ImageFile
 import matplotlib.pyplot as plt
 import numpy as np
 
-
 from generation.datasets.preprocess import Transforms
 # 需要import才能注册
 from generation import * 
@@ -25,7 +24,7 @@ def gen_batch_sample_ddpm(model, bs, log_dir, mean, std):
     samples = model(bs=bs, return_loss=False)
     # 可视化
     generate_images = samples
-    fig, axes = plt.subplots(8, 8, figsize=(10, 10))  # Create an 8x8 grid of subplots
+    fig, axes = plt.subplots(5, 5, figsize=(10, 10))  # Create an 8x8 grid of subplots
     for i, ax in enumerate(axes.flat):
         # [H, W, C]
         gen_img_norm = generate_images[i].transpose((1,2,0))
@@ -65,7 +64,7 @@ if __name__ == '__main__':
     device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     log_dir = "./"
     img_size = [128, 128]
-    bs = 64
+    bs = 25
 
     '''FlickrBreeds'''
     # load_ckpt = 'log/ddpm_unet_FlickrBreeds_train_ddp/2025-10-07-19-53-15_train_ddp/last.pt'

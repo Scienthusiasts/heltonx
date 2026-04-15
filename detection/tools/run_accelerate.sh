@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-export CUDA_VISIBLE_DEVICES=0,2
+export CUDA_VISIBLE_DEVICES=0,1
 # export CUDA_VISIBLE_DEVICES=2,3
 # export CUDA_VISIBLE_DEVICES=0,1,2,3
 # export CUDA_VISIBLE_DEVICES=0,3
@@ -23,6 +23,11 @@ cd /mnt/yht/code/HeltonPretrain
 #     detection/tools/train_accelerate.py \
 #     --config /mnt/yht/code/HeltonPretrain/detection/configs/fcos_pafpn_coco_ddp.py
 
+# fcos_cspnet_coco
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     detection/tools/train_accelerate.py \
+#     --config detection/configs/fcos_cspnet_coco_ddp.py
+
 # fcos_pafpn_dinov3sta_coco
 # PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
 #     detection/tools/train_accelerate.py \
@@ -36,14 +41,14 @@ cd /mnt/yht/code/HeltonPretrain
 
 
 # yolov5_coco
-# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
-#     detection/tools/train_accelerate.py \
-#     --config /mnt/yht/code/HeltonPretrain/detection/configs/yolov5_coco_ddp.py
-
-# yolov5_voc
 PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
     detection/tools/train_accelerate.py \
-    --config /mnt/yht/code/HeltonPretrain/detection/configs/yolov5_VOC_ddp.py
+    --config /mnt/yht/code/HeltonPretrain/detection/configs/yolov5_coco_ddp.py
+
+# yolov5_voc
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     detection/tools/train_accelerate.py \
+#     --config /mnt/yht/code/HeltonPretrain/detection/configs/yolov5_VOC_ddp.py
 
 
 
@@ -58,7 +63,7 @@ PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file helto
 # CUDA_VISIBLE_DEVICES=2 PYTHONPATH=. accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_single_gpu.yaml ./detection/tools/train_accelerate.py --config detection/configs/yolov5_coco.py
 
 # 验证:
-# python -m detection.tools.eval --config detection/configs/yolov5_coco_eval.py
+# CUDA_VISIBLE_DEVICES=2 python -m detection.tools.eval --config detection/configs/yolov5_coco_eval.py
 
 # 推理:
 # python -m detection.tools.test

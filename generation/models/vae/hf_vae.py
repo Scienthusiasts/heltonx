@@ -7,8 +7,8 @@ from diffusers import AutoencoderKL
 @MODELS.register
 class HFVAE(nn.Module):
     """
-    使用预训练的 Ostris VAE (KL-f8-d16) 作为图像特征编码器。
-    将 RGB 图像压缩为保留了空间信息的高频 16 通道潜在矩阵。
+    使用预训练的 VAE 作为图像特征编码器。
+    将 RGB 图像压缩为保留了空间信息的高频 C 通道隐空间矩阵。
     """
     def __init__(self, weight_dir, latent_dim, down_scale):
         """初始化
@@ -27,7 +27,7 @@ class HFVAE(nn.Module):
 
             
     def forward(self, x=None, return_loss=True, bs=None):
-        """前向，调用 VAE 提取 16 通道潜在特征
+        """前向，调用 VAE 提取 C 通道隐空间特征
             Args:
                 x: 输入图像 [B, 3, H, W], 像素值通常需要归一化到 [-1, 1]
                 return_loss: 这里代表的是是否开启训练模型，而不是计算损失
@@ -35,7 +35,7 @@ class HFVAE(nn.Module):
                              return_loss=False: 采样, 随机生成, 此时x为None
                              
             Returns:
-                z: 潜在特征矩阵 [B, 16, H/8, W/8]
+                z: 潜在特征矩阵 [B, C, H/8, W/8]
         """
         if return_loss:
             # 1. 提取潜在分布 (Posterior)
@@ -70,6 +70,7 @@ class HFVAE(nn.Module):
             posterior = self.vae.encode(img).latent_dist
             # 2. 推理时直接使用均值 mu，丢弃方差噪声以获得确定性结果
             z = posterior.mode()
+            print(z.shape)
             # 3. 直接解码
             recons = self.vae.decode(z).sample
             return recons

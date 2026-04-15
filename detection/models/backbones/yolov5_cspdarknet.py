@@ -46,7 +46,7 @@ class YOLOv5CSPDarknet(nn.Module):
         if load_ckpt:
             # self = load_state_dict_with_prefix(self, load_ckpt)
             state_dict = torch.load(load_ckpt, map_location='cpu')
-            self.load_state_dict(state_dict, strict=False)
+            self.load_state_dict(state_dict)
         # 是否冻结backbone
         if froze_backbone:
             for param in self.parameters():

@@ -120,7 +120,7 @@ if __name__ == '__main__':
     # gen_batch_sample(model, bs, log_dir)
 
     # 图像复原
-    img_path = r'/mnt/yht/data/celeba_256/train/14112.jpg'
+    img_path = r"/mnt/yht/data/vlm/pretrain_images/GCC_train_000960697.jpg"
     # img_path = r'/mnt/yht/data/vlm/pretrain_images/GCC_train_000960697.jpg'
     reconstruct_one_sample(device, model, img_path, img_size, log_dir, mean, std)
 

@@ -24,21 +24,18 @@ cat_maps = {1:0, 2:1, 3:2, 4:3, 5:4, 6:5, 7:6, 8:7, 9:8, 10:9, 11:10, 13:11, 14:
     67:60, 70:61, 72:62, 73:63, 74:64, 75:65, 76:66, 77:67, 78:68, 79:69, 80:70, 81:71, 82:72, 84:73, 85:74, 86:75, 87:76, 88:77, 89:78, 90:79}
 
 phi = 's'
-anchors=[[10, 13], [16, 30], [33, 23], [30, 61], [62, 45], [59, 119], [116, 90], [156, 198], [373, 326]]
-anchors_mask=[[0,1,2], [3,4,5], [6,7,8]]
-nc = len(cat_names)
-mode = 'eval'
+nc = 80
+mode = 'train_ddp'
 seed = 42
-log_dir = r'./log/yolov5_coco_eval'
+log_dir = r'./log/fcos_cspnet_coco_train_ddp'
 img_size = [640, 640]
-epoch = 12 * 4
+epoch = 12 * 3
 bs = 8
 lr = 1e-3
 warmup_lr = 1e-5
-warmup_decay = 1e-2
 warmup_epochs = 2
 lr_decay = 1e-1
-load_ckpt = 'log/yolov5_coco_train/2025-12-08-22-57-35_train/last.pt'
+load_ckpt = None
 log_interval = 50
 eval_interval = 1
 resume = None
@@ -46,15 +43,17 @@ resume = None
 
 '''模型配置参数'''
 model_cfgs = dict(
-    type="YOLOv5",
+    type="FCOS",
+    img_size=img_size,
     nc=nc, 
-    img_size=img_size, 
-    anchors=anchors,
-    anchors_mask=anchors_mask,
     load_ckpt=load_ckpt,
     nms_score_thr=0.05,
     nms_iou_thr=0.3, 
     nms_agnostic=False,
+    bbox_coder=dict(
+        type="FCOSBBoxCoder",
+        strides=[8, 16, 32, 64, 128]
+    ),
     backbone=dict(
         type="YOLOv5CSPDarknet",
         phi=phi,
@@ -62,43 +61,39 @@ model_cfgs = dict(
         froze_backbone=False,
         load_ckpt=f'ckpts/yolo/cspdarknet_{phi}_v6.1_backbone.pth'
     ), 
-    fpn=dict(
+    fpn = dict(
         type="YOLOv5PAFPN",
         phi=phi,
-    ), 
-    heads=dict(
-        type="YOLOv5Head",
+        num_extra_levels=2,
+    ),
+    head=dict(
+        type="YOLOv5FCOSHead",
         phi=phi,
         nc=nc, 
-        img_size=img_size, 
-        anchors=anchors,
-        anchors_mask=anchors_mask,
-        label_smoothing=0,
-        layers_num=3,
-        cls_loss=dict(
-            # type="FocalLoss",
-            # reduction="mean",
-            # gamma=2.0, 
-            # alpha=0.25
-            type="BCELoss",
-            reduction="mean"
-        ),
-        box_loss=dict(
-            type="IoULoss",
-            iou_type='giou',
-            xywh=True,
-            reduction="none",
-        ),
-        obj_loss=dict(
+        img_size=img_size,
+        layers_num=5,
+        cnt_loss=dict(
             type="BCELoss",
             reduction="mean"
         ), 
+        cls_loss=dict(
+            type="FocalLoss",
+            reduction="none",
+            gamma=2.0, 
+            alpha=0.25
+        ),
+        reg_loss=dict(
+            type="IoULoss",
+            iou_type='giou',
+            xywh=False,
+            reduction="mean",
+        ),
         assigner=dict(
-            type="YOLOv5Assigner",
+            type="FCOSAssigner",
             img_size=img_size, 
-            anchors=anchors,
-            anchors_mask=anchors_mask,
-            threshold=4,
+            strides=[8, 16, 32, 64, 128], 
+            limit_ranges=[[-1,64],[64,128],[128,256],[256,512],[512,999999]], 
+            sample_radiu_ratio=1.5
         )
     )
 )
@@ -142,13 +137,15 @@ optimizer_cfgs=dict(
 '''学习率衰减策略配置参数'''
 scheduler_cfgs=dict(
     base_schedulers_cfgs=dict(
-        type="CosineAnnealingLR",
-        T_max=epoch - warmup_epochs,
-        eta_min=lr * lr_decay,
+        type="StepLR",
+        # 每间隔step_size个epoch更新学习率
+        step_size=1,
+        # 每次学习率变为原来的gamma倍
+        gamma=lr_decay**(1/epoch),
     ),
     warmup_schedulers_cfgs=dict(
             type="WarmupScheduler",
-            min_lr=lr * warmup_decay,
+            min_lr=warmup_lr,
             warmup_epochs=warmup_epochs
     )
 )

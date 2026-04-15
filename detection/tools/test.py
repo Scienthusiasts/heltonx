@@ -50,7 +50,6 @@ def infer_single_img(model, device, img_path, cat_names, save_vis_path):
 
     image = np.array(Image.open(img_path).convert('RGB'))
     image = resize_to_multiple_no_keep_ratio(image, 8)
-    print(image.shape)
     tensor_img = torch.tensor(transform.test_transform(image=image)['image'])
     tensor_img = resize_tensor_to_multiple(tensor_img, 16)
 
@@ -107,9 +106,9 @@ if __name__ == '__main__':
     nc = len(cat_names)
 
     img_size = [800, 800]
-    load_ckpt = 'log/yolov5_coco_train/2025-12-08-22-57-35_train/last.pt'
 
     '''模型配置参数'''
+    load_ckpt = 'log/yolov5_coco_train/2025-12-08-22-57-35_train/last.pt'
     phi = 's'
     anchors=[[10, 13], [16, 30], [33, 23], [30, 61], [62, 45], [59, 119], [116, 90], [156, 198], [373, 326]] 
     anchors_mask=[[0,1,2], [3,4,5], [6,7,8]]
@@ -170,8 +169,68 @@ if __name__ == '__main__':
             )
         )
     )
+
+
+    '''FCOS'''
+    # load_ckpt = "log/fcos_pafpn_coco_train_ddp/2025-10-22-15-22-15_train_ddp/last.pt"
+    # model_cfgs = dict(
+    #     type="FCOS",
+    #     img_size=img_size,
+    #     nc=nc, 
+    #     load_ckpt=load_ckpt,
+    #     nms_score_thr=0.25,
+    #     nms_iou_thr=0.3, 
+    #     nms_agnostic=False,
+    #     bbox_coder=dict(
+    #         type="FCOSBBoxCoder",
+    #         strides=[8, 16, 32, 64, 128]
+    #     ),
+    #     backbone=dict(
+    #         type="TIMMBackbone",
+    #         model_name="resnet50.a1_in1k",
+    #         pretrained=False,
+    #         out_layers=[2,3,4],
+    #         froze_backbone=False,
+    #         load_ckpt='ckpts/backbone_resnet50.a1_in1k.pt'
+    #     ), 
+    #     fpn = dict(
+    #         type="PAFPN",
+    #         in_channels=[512, 1024, 2048],
+    #         out_channel=256,
+    #         num_extra_levels=2
+    #     ),
+    #     head=dict(
+    #         type="FCOSHead",
+    #         nc=nc, 
+    #         in_channel=256, 
+    #         cnt_loss=dict(
+    #             type="BCELoss",
+    #             reduction="mean"
+    #         ), 
+    #         cls_loss=dict(
+    #             type="FocalLoss",
+    #             reduction="none",
+    #             gamma=2.0, 
+    #             alpha=0.25
+    #         ),
+    #         reg_loss=dict(
+    #             type="IoULoss",
+    #             iou_type='giou',
+    #             xywh=False,
+    #             reduction="mean",
+    #         ),
+    #         assigner=dict(
+    #             type="FCOSAssigner",
+    #             img_size=img_size, 
+    #             strides=[8, 16, 32, 64, 128], 
+    #             limit_ranges=[[-1,64],[64,128],[128,256],[256,512],[512,999999]], 
+    #             sample_radiu_ratio=1.5
+    #         )
+    #     )
+    # )
+
     model = MODELS.build_from_cfg(model_cfgs).to(device)
     model.eval()
-    img_path = 'detection/demos/13.jpg'
+    img_path = 'detection/demos/street.jpg'
     save_vis_path = './det_res.jpg'
     infer_single_img(model, device, img_path, cat_names, save_vis_path)

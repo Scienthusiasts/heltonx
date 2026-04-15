@@ -111,7 +111,7 @@ def OpenCVDrawBox(image, boxes, classes, scores, save_vis_path, image2color, cla
     boxes[:, [0,2]] *= w / W
     boxes[:, [1,3]] *= h / H
 
-    image = cv2.resize(image, (w, h))
+    image = cv2.resize(image, (w, h), interpolation=cv2.INTER_AREA)
     # 框的粗细
     thickness = max(1, int(image.shape[0] * 0.003))
     for box, cls, score in zip(boxes, classes, scores):

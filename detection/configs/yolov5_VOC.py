@@ -19,6 +19,8 @@ epoch = 12 * 4
 bs = 16
 lr = 1e-3
 warmup_lr = 1e-5
+warmup_decay = 1e-2
+warmup_epochs = 2
 lr_decay = 1e-1
 load_ckpt = None
 log_interval = 50
@@ -124,16 +126,14 @@ optimizer_cfgs=dict(
 '''学习率衰减策略配置参数'''
 scheduler_cfgs=dict(
     base_schedulers_cfgs=dict(
-        type="StepLR",
-        # 每间隔step_size个epoch更新学习率
-        step_size=1,
-        # 每次学习率变为原来的gamma倍
-        gamma=lr_decay**(1/epoch),
+        type="CosineAnnealingLR",
+        T_max=epoch - warmup_epochs,
+        eta_min=lr * lr_decay,
     ),
     warmup_schedulers_cfgs=dict(
             type="WarmupScheduler",
-            min_lr=warmup_lr,
-            warmup_epochs=1
+            min_lr=lr * warmup_decay,
+            warmup_epochs=warmup_epochs
     )
 )
 

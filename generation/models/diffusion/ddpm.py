@@ -25,9 +25,22 @@ class DDPM(nn.Module):
         super(DDPM, self).__init__()
         self.loss_type = loss_type
         self.denoise_model = denoise_model
+        self.channel = self.denoise_model.input_dim 
         self.img_size = img_size
+        self.bs = batch_size
+
+        # 生成训练或推理会用到的参数
+        self.get_init_params(schedule_name, timesteps, beta_start, beta_end)
+        # 是否导入预训练权重
+        if load_ckpt: 
+            self = load_state_dict_with_prefix(self, load_ckpt)
+
+
+
+
+    def get_init_params(self, schedule_name, timesteps, beta_start, beta_end):
         # 方差生成
-        variance_schedule_func = VarianceSchedule(schedule_name=schedule_name, beta_start=beta_start, beta_end=beta_end)
+        variance_schedule_func = VarianceSchedule(schedule_name, beta_start, beta_end)
         self.timesteps = timesteps
         # self.betas是从beta_start到beta_end的数列(用于控制噪声与图像的比例)
         self.betas = variance_schedule_func(timesteps)
@@ -48,9 +61,8 @@ class DDPM(nn.Module):
         # 这里用的不是简化后的方差而是算出来的
         self.posterior_variance = self.betas * (1. - self.alphas_cumprod_prev) / (1. - self.alphas_cumprod)
 
-        # 是否导入预训练权重
-        if load_ckpt: 
-            self = load_state_dict_with_prefix(self, load_ckpt)
+
+
 
 
     def q_sample(self, x_start, t, noise=None):
@@ -75,25 +87,7 @@ class DDPM(nn.Module):
         return noise_x
 
 
-    def compute_loss(self, x_start, t, noise=None, loss_type="l1"):
-        # 生成pure高斯噪声
-        if noise is None:
-            noise = torch.randn_like(x_start)
 
-        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
-        # 预测 x_start -> x_noisy过程中所加的原始pure高斯噪声(不包含加权系数)
-        predicted_noise = self.denoise_model(x_noisy, t)
-
-        if loss_type == 'l1':
-            loss = F.l1_loss(noise, predicted_noise)
-        elif loss_type == 'l2':
-            loss = F.mse_loss(noise, predicted_noise)
-        elif loss_type == "huber":
-            loss = F.smooth_l1_loss(noise, predicted_noise)
-        else:
-            raise NotImplementedError()
-
-        return loss
 
 
     @torch.no_grad()
@@ -118,10 +112,10 @@ class DDPM(nn.Module):
             return model_mean + torch.sqrt(posterior_variance_t) * noise
 
 
+
     @torch.no_grad()
     def p_sample_loop(self, shape):
         device = next(self.denoise_model.parameters()).device
-
         b = shape[0]
         # 从pure高斯噪声开始逆扩散
         img = torch.randn(shape, device=device)
@@ -133,20 +127,6 @@ class DDPM(nn.Module):
             img = self.p_sample(img, batch_t, t)
             imgs.append(img.cpu().numpy())
         return imgs
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -245,7 +225,7 @@ class DDPM(nn.Module):
             batch_t_prev = torch.full((b,), t_prev, device=device, dtype=torch.long)
 
             img = self.ddim_p_sample(img, batch_t, batch_t_prev, eta=eta)
-            imgs.append(img.cpu().numpy())
+            imgs.append(img)
 
         return imgs
 
@@ -253,30 +233,41 @@ class DDPM(nn.Module):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
     @torch.no_grad()
-    def sample(self, bs=None, channels=3):
+    def sample(self, bs=None):
         bs = bs if bs else self.bs
+        shape = (bs, self.channel, self.img_size[0], self.img_size[1])
         # DDPM 采样:
-        # denoise_img_series = self.p_sample_loop(shape=(bs, channels, self.img_size[0], self.img_size[1]))
+        # denoise_img_series = self.p_sample_loop(shape=shape)
         # DDIM 采样:
         # eta=0 完全确定性 DDIM(通常用于快速、稳定采样) / eta>0 引入部分随机性, 最后会退回到 DDPM 的随机性(eta=1 时近似随机)
-        denoise_img_series = self.ddim_p_sample_loop(shape=(bs, channels, self.img_size[0], self.img_size[1]), ddim_steps=50, eta=0.0)
+        denoise_img_series = self.ddim_p_sample_loop(shape=shape, ddim_steps=50, eta=0.0)
         return denoise_img_series
 
 
+
+
+    def compute_loss(self, x_start, t, noise=None, loss_type="l1"):
+        # 生成pure高斯噪声
+        if noise is None:
+            noise = torch.randn_like(x_start)
+
+        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
+        # 预测 x_start -> x_noisy过程中所加的原始pure高斯噪声(不包含加权系数)
+        predicted_noise = self.denoise_model(x_noisy, t)
+
+        if loss_type == 'l1':
+            loss = F.l1_loss(noise, predicted_noise)
+        elif loss_type == 'l2':
+            loss = F.mse_loss(noise, predicted_noise)
+        elif loss_type == "huber":
+            loss = F.smooth_l1_loss(noise, predicted_noise)
+        else:
+            raise NotImplementedError()
+
+        return loss
+    
+    
 
 
     def forward(self, batch_data=None, return_loss=True, bs=None):
@@ -295,7 +286,7 @@ class DDPM(nn.Module):
             return losses
         else:
             # [-1]是只取最后一个time_step
-            return self.sample(bs=bs)[-1]
+            return self.sample(bs=bs)[-1].cpu().numpy()
 
 
 

@@ -152,7 +152,7 @@ def init_weights(model, init_type='he', mean=0, std=0.01):
                     # LSTM 的 forget gate bias 有时建议初始化为 1 (可选优化)
     
     # 使用 PyTorch 的 apply 方法递归遍历所有子模块
-    print(f"Applying {init_type} initialization to {model.__class__.__name__}...")
+    # print(f"Applying {init_type} initialization to {model.__class__.__name__}...")
     model.apply(_init_func)
     
 

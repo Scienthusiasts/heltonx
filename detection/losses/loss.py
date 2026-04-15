@@ -56,8 +56,6 @@ class BCELoss(nn.Module):
 
 
 
-
-
 @MODELS.register
 class FocalLoss(nn.Module):
     '''FocalLoss

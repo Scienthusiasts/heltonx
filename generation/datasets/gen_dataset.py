@@ -121,7 +121,8 @@ class GenDataset(data.Dataset):
             # 微调行间距
             plt.subplots_adjust(left=0.01, bottom=0.01, right=0.99, top=0.97, wspace=0.01, hspace=0.2)
 
-        plt.savefig(f'./epoch{epoch}_step{step}_.jpg', dpi=300)
+        os.makedirs('./vis_img', exist_ok=True)
+        plt.savefig(f'./vis_img/epoch{epoch}_step{step}_.jpg', dpi=300)
 
 
 
@@ -133,7 +134,7 @@ class GenDataset(data.Dataset):
 if __name__ == '__main__':
 
     # 配置字典
-    img_dir = r'/mnt/yht/data/The_Oxford_IIIT_Pet_Dataset/images'
+    img_dir = r'/mnt/yht/data/face_256/celeba_256'
     cfg = {
         "dataset_cfg": {
             "type": "GenDataset",
@@ -153,6 +154,7 @@ if __name__ == '__main__':
     for epoch in range(1, 10):
         for step, batch in enumerate(train_data_loader):
             batch_imgs = batch[0]
+            print(epoch, step)
             if step == 0:
                 # 可视化一个batch里的图像
                 train_dataset._vis_GenDataset_batch(epoch, step, batch_imgs)

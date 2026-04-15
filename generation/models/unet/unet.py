@@ -1,8 +1,5 @@
 from functools import partial
-from einops import rearrange, reduce
 import torch
-from torch import nn, einsum
-import torch.nn.functional as F
 
 from generation.utils.utils import *
 from generation.models.unet.blocks import *
@@ -136,6 +133,7 @@ class UNet(nn.Module):
                 x: 最终生成的图像
         """
         super().__init__()
+        self.input_dim = input_dim 
         # 时间嵌入(DDPM需要知道step信息)
         time_dim = layer_dims[0] * 4
         self.time_mlp = nn.Sequential(

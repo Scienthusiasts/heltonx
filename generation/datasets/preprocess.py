@@ -34,7 +34,7 @@ class Transforms():
                 # A.VerticalFlip(p=0.5),
                 # A.RandomRotate90(p=0.5),
                 # 随机尺寸裁剪并缩放到固定尺寸
-                A.RandomResizedCrop(img_size[0], img_size[1], scale=(0.95, 1), ratio=(0.99, 1), p=1),    
+                A.RandomResizedCrop(img_size[0], img_size[1], scale=(0.99, 1), ratio=(0.99, 1), p=1, interpolation=cv2.INTER_AREA),    
                 # 最长边限制为img_size
                 A.LongestMaxSize(max_size=img_size[0]),
                 A.PadIfNeeded(img_size[0], img_size[1], border_mode=cv2.BORDER_ISOLATED, value=self.pad_value),
@@ -42,4 +42,11 @@ class Transforms():
                 A.Normalize(mean=self.img_mean, std=self.img_std),
             ])
         
-
+        self.mask_transform = A.Compose([
+                A.HorizontalFlip(p=0.5),
+                A.VerticalFlip(p=0.5),
+                A.RandomRotate90(p=0.5),
+                # 图像归一化
+                A.Normalize(mean=self.img_mean, std=self.img_std),
+            ],
+            is_check_shapes=False)

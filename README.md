@@ -160,8 +160,8 @@ python ./xxx/tools/test.py
 | `2025/10/21` | ✅ 支持检测任务`./detection`，支持 FCOS 检测器，COCO 格式数据读取 |
 | `2025/11/1`  |                ➡️ 支持 LLM 训练和推理 (开发中)                |
 | `2025/11/21` |                ➡️ 支持 VLM 训练和推理 (开发中)                |
-| `2026/03/24` |                ➡️ 支持 LDM（Latent Diffusion）                |
-
+| `2026/03/24` |                ✅ 支持 LDM（Latent Diffusion）                |
+| `2026/04/15` |                ✅ 支持 DiT ✅ 支持 Flow 生成范式                |
 
 
 ## ➡️TODO
