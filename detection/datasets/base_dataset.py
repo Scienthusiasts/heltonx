@@ -99,7 +99,7 @@ class BaseDetDataset(Dataset, DDPSafeDataset):
         """mixUp数据增强: https://arxiv.org/pdf/1710.09412.pdf.
           (需要两张图像大小一致, 因此必须在基础数据预处理之后)
         """
-        if (np.random.rand() <= p):
+        if (np.random.rand() >= p):
             return image1, boxes1, labels1
         
         index2 = np.random.randint(self.dataset_num)
@@ -121,7 +121,7 @@ class BaseDetDataset(Dataset, DDPSafeDataset):
     def mosaic4(self, image1, boxes1, labels1, jitter=0.2, scale=.5, p=0.5):
         """mosaic数据增强, 将四张图像拼在一起
         """
-        if (np.random.rand() <= p):
+        if (np.random.rand() >= p):
             return image1, boxes1, labels1
         
         # 随机选取其他3张图像的索引
@@ -133,7 +133,7 @@ class BaseDetDataset(Dataset, DDPSafeDataset):
         image2, boxes2, labels2 = self.train_aug(image2, boxes2, labels2)
         image3, boxes3, labels3 = self.train_aug(image3, boxes3, labels3)
         image4, boxes4, labels4 = self.train_aug(image4, boxes4, labels4)
-        W, H = self.img_size
+        H, W = self.img_size
         images = [image1, image2, image3, image4]
         bboxes = [boxes1, boxes2, boxes3, boxes4]
         labels = [labels1, labels2, labels3, labels4]

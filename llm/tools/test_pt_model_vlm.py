@@ -14,8 +14,9 @@ def main():
     #<image> 图片中有几只小动物.
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     # weight_path = 'log/vlm/minimindv_dinov3_pretrain1024/2025-11-23-11-51-45_train_ddp/last.pt'
-    weight_path = 'log/vlm/minimindv_dinov3_pretrain512/2025-11-28-23-45-35_train_ddp/last.pt'
+    # weight_path = 'log/vlm/minimindv_dinov3_pretrain512/2025-11-28-23-45-35_train_ddp/last.pt'
     # weight_path = 'log/vlm/minimindv_clip_pretrain512/2025-11-19-19-35-20_train_ddp/last.pt'
+    weight_path = 'log/vlm/minimindv_dinov3_pretrain1024/2025-11-23-11-51-45_train_ddp/last.pt'
     tokenizer_dir = 'llm/tokenizer_configs/minimind2'
     # img_path = '/mnt/yht/data/vlm/pretrain_images/GCC_train_002672738.jpg'
     instruct_model = True
@@ -50,7 +51,7 @@ def main():
     tokenizer = MODELS.build_from_cfg(tokenizer_cfg)
     model = MODELS.build_from_cfg(llm_cfgs).eval().to(device)
     model.eval().to(device)
-    print(f'模型参数: {sum(p.numel() for p in model.parameters()) / 1e6:.2f} M(illion)')
+    print(f'模型参数: {sum(p.numel() for p in model.parameters()) / 1e6:.2f} (M)')
 
 
     # 初始化对话存储列表，用于存储上下文历史

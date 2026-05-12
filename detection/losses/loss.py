@@ -1,7 +1,12 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import math
 from heltonx.utils.register import MODELS
+from detection.utils.detr_utils import (
+    sigmoid_focal_loss, generalized_box_iou,
+    box_cxcywh_to_xyxy
+)
 
 
 
@@ -128,6 +133,44 @@ class QFocalLoss(nn.Module):
 
 
 
+
+
+@MODELS.register
+class L1Loss(nn.Module):
+    '''L1 损失
+    '''
+    def __init__(self, reduction='mean'):
+        super(L1Loss, self).__init__()
+        self.loss = nn.L1Loss(reduction='none')
+        self.reduction = reduction
+
+    def forward(self, pred, target):
+        loss = self.loss(pred, target)
+        if self.reduction == 'mean':
+            return loss.mean()
+        if self.reduction == 'none':
+            return loss
+        if self.reduction == 'sum':
+            return loss.sum()
+
+
+@MODELS.register
+class CrossEntropyLoss(nn.Module):
+    '''交叉熵损失 (用于 DETR 分类)
+    '''
+    def __init__(self, reduction='mean'):
+        super(CrossEntropyLoss, self).__init__()
+        self.loss = nn.CrossEntropyLoss(reduction='none')
+        self.reduction = reduction
+
+    def forward(self, pred, target):
+        loss = self.loss(pred, target)
+        if self.reduction == 'mean':
+            return loss.mean()
+        if self.reduction == 'none':
+            return loss
+        if self.reduction == 'sum':
+            return loss.sum()
 
 
 @MODELS.register
@@ -268,3 +311,157 @@ class IoULoss(nn.Module):
             c_area = cw * ch + eps  # convex area
             return iou - (c_area - union) / c_area  # GIoU https://arxiv.org/pdf/1902.09630.pdf
         return iou  # IoU
+
+
+# ============================================================
+# DETR Loss 模块
+# ============================================================
+
+
+@MODELS.register
+class DETRCrossEntropyLoss(nn.Module):
+    """DETR 分类损失：Cross Entropy Loss（与官方实现一致）
+
+    使用 softmax 多分类，背景类（索引 nc）权重为 eos_coef。
+
+    Args:
+        nc (int):       前景类别数 (不含背景)
+        eos_coef (float): 背景类权重系数，默认 0.1
+    """
+
+    def __init__(self, nc, eos_coef=0.1):
+        super().__init__()
+        self.nc = nc
+        self.eos_coef = eos_coef
+        # 背景类权重较小，降低其对损失的贡献
+        weight = torch.ones(nc + 1)
+        weight[nc] = eos_coef
+        self.register_buffer('weight', weight)
+
+    def forward(self, cls_preds, cls_targets):
+        """
+        Args:
+            cls_preds:   [B, num_queries, nc+1] 分类 logits
+            cls_targets: [B, num_queries] 类别索引（nc 表示背景）
+
+        Returns:
+            标量分类损失（mean over B*num_queries）
+        """
+        loss = F.cross_entropy(
+            cls_preds.reshape(-1, self.nc + 1),
+            cls_targets.reshape(-1),
+            weight=self.weight,
+            reduction='mean'
+        )
+        return loss
+
+
+@MODELS.register
+class DETRFocalLoss(nn.Module):
+    """DETR 分类损失：Sigmoid Focal Loss（备选）
+
+    Args:
+        alpha (float): 正负样本平衡因子
+        gamma (float): 调制因子
+    """
+
+    def __init__(self, alpha=0.25, gamma=2.0):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+
+    def forward(self, cls_preds, cls_targets, num_boxes):
+        """
+        Args:
+            cls_preds:   [B, num_queries, nc+1] 分类 logits
+            cls_targets: [B, num_queries, nc+1] one-hot 标签
+            num_boxes:   int, GT 框总数（归一化因子）
+
+        Returns:
+            标量分类损失
+        """
+        loss = sigmoid_focal_loss(
+            cls_preds, cls_targets,
+            alpha=self.alpha, gamma=self.gamma,
+            reduction='sum'
+        )
+        return loss / num_boxes
+
+
+@MODELS.register
+class DETRL1Loss(nn.Module):
+    """DETR L1 回归损失（仅对匹配 query 计算，除以 num_boxes）"""
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, box_preds, box_targets, matched_masks, num_boxes):
+        """
+        Args:
+            box_preds:    [B, num_queries, 4] 归一化 cxcywh
+            box_targets:   [B, num_queries, 4] 归一化 cxcywh
+            matched_masks: [B, num_queries] bool，True 表示该 query 被匹配
+            num_boxes:     int, GT 框总数（归一化因子）
+
+        Returns:
+            标量 L1 损失
+        """
+        pred_matched = box_preds[matched_masks]
+        target_matched = box_targets[matched_masks]
+        return F.l1_loss(pred_matched, target_matched, reduction='sum') / num_boxes
+
+
+@MODELS.register
+class DETRGiouLoss(nn.Module):
+    """DETR GIoU 回归损失（仅对匹配 query 计算，除以 num_boxes）"""
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, box_preds, box_targets, matched_masks, num_boxes):
+        """
+        Args:
+            box_preds:    [B, num_queries, 4] 归一化 cxcywh
+            box_targets:   [B, num_queries, 4] 归一化 cxcywh
+            matched_masks: [B, num_queries] bool，True 表示该 query 被匹配
+            num_boxes:     int, GT 框总数（归一化因子）
+
+        Returns:
+            标量 GIoU 损失
+        """
+        pred_matched = box_preds[matched_masks]
+        target_matched = box_targets[matched_masks]
+        pred_xyxy = box_cxcywh_to_xyxy(pred_matched)
+        target_xyxy = box_cxcywh_to_xyxy(target_matched)
+        giou = generalized_box_iou(pred_xyxy, target_xyxy)
+        giou_diag = torch.diag(giou)
+        return (1 - giou_diag).sum() / num_boxes
+
+
+
+@MODELS.register
+class SmoothL1Loss(nn.Module):
+    '''Smooth L1 损失 (Huber Loss)
+
+    用于 Faster R-CNN 的 RPN 和 RoI Head 回归损失。
+    对较小误差使用 L2，对较大误差使用 L1，对 outliers 更鲁棒。
+
+    Args:
+        beta (float): L1/L2 切换阈值，默认 1.0/9.0
+        reduction (str): 'mean' / 'sum' / 'none'
+    '''
+    def __init__(self, beta=1.0/9.0, reduction='mean'):
+        super(SmoothL1Loss, self).__init__()
+        self.beta = beta
+        self.reduction = reduction
+        self.loss = nn.SmoothL1Loss(beta=beta, reduction='none')
+
+    def forward(self, pred, target):
+        loss = self.loss(pred, target)
+        if self.reduction == 'mean':
+            return loss.mean()
+        if self.reduction == 'sum':
+            return loss.sum()
+        if self.reduction == 'none':
+            return loss
+

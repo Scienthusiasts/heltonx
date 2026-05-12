@@ -72,7 +72,9 @@ class Evaler():
 
 
     def eval(self):
-        '''验证流程
-        '''
+        """执行完整的评估流程
+
+        依次调用 before_eval 和 after_eval Hook，执行模型评估并记录日志
+        """
         self.call_hooks("before_eval", runner=self)
         self.call_hooks("after_eval", runner=self)

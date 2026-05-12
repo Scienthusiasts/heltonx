@@ -51,9 +51,27 @@ PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file helto
 #     --config /mnt/yht/code/HeltonPretrain/detection/configs/yolov5_VOC_ddp.py
 
 
+# detr_coco
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     detection/tools/train_accelerate.py \
+#     --config /mnt/yht/code/HeltonPretrain/detection/configs/detr_coco_ddp.py
 
 
 
+# fasterrcnn_fpn_coco
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     detection/tools/train_accelerate.py \
+#     --config /mnt/yht/code/HeltonPretrain/detection/configs/fasterrcnn_fpn_coco_ddp.py
+
+# fasterrcnn_pafpn_coco
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     detection/tools/train_accelerate.py \
+#     --config /mnt/yht/code/HeltonPretrain/detection/configs/fasterrcnn_pafpn_coco_ddp.py
+
+# fasterrcnn_pafpn_coco
+# PYTHONPATH=. /mnt/yht/env/yht_pretrain/bin/accelerate launch --config_file heltonx/configs/accelerate_yamls/accelerate_ddp.yaml \
+#     detection/tools/train_accelerate.py \
+#     --config /mnt/yht/code/HeltonPretrain/detection/configs/fasterrcnn_pafpn_dinov3sta_coco_ddp.py
 
 
 

@@ -1,4 +1,8 @@
 # coding=utf-8
+"""
+HeltonX 日志工具模块
+提供训练日志记录、TensorBoard 支持和模型信息打印功能
+"""
 import os
 import json
 import torch
@@ -14,7 +18,8 @@ from torch.utils.data import DataLoader
 from timm.scheduler import CosineLRScheduler
 from torch.utils.tensorboard import SummaryWriter
 from typing import List, Dict, Optional
-# 多卡并行训练:
+
+# 多卡并行训练
 import torch.distributed as dist
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -23,43 +28,57 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 
-class ArgsHistory():
-    """记录train或val过程中的一些变量(比如 loss, lr等) 以及tensorboard
-       以字典形式存储, 例:{'loss1':[...], 'loss2':[...], ...}
+class ArgsHistory:
+    """训练参数历史记录器
+
+    记录训练或验证过程中的各类变量（如 loss、lr 等）以及 TensorBoard 日志
+    以字典形式存储，例: {'loss1': [...], 'loss2': [...], ...}
     """
+
     def __init__(self, json_save_dir, mode):
-        # NOTE:多卡
-        if mode in ['train', 'eval'] or (mode=='train_ddp' and dist.get_rank() == 0):
-            # tensorboard 对象
+        """初始化 ArgsHistory
+
+        Args:
+            json_save_dir (str): JSON 记录文件的保存目录
+            mode (str): 运行模式，可选值：'train', 'eval', 'train_ddp'
+        """
+        # NOTE: 多卡训练时只在主进程创建 TensorBoard writer
+        if mode in ['train', 'eval'] or (mode == 'train_ddp' and dist.get_rank() == 0):
             self.tb_writer = SummaryWriter(log_dir=json_save_dir)
         self.json_save_dir = json_save_dir
-        # 所有变量记录在self.args_history_dict中
-        self.args_history_dict = {}
+        self.args_history_dict = {}  # 所有变量记录在 self.args_history_dict 中
 
 
     def record(self, key, value):
-        '''更新变量的记录, 变量为key, 新增的记录为value
+        """更新变量的历史记录
+
         Args:
-            - key:   要记录的当前变量的名字
-            - value: 要记录的当前变量的数值
-            
+            key (str): 要记录的变量名称
+            value: 要记录的变量数值（会自动转换为 float 类型）
+
         Returns:
             None
-        '''
+        """
         # 可能存在json格式不支持的类型, 因此统一转成float类型
-        value = float(value)
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = 0.0
         # 如果日志中还没有这个变量，则新建
         if key not in self.args_history_dict.keys():
             self.args_history_dict[key] = []
         # 更新history dict
         self.args_history_dict[key].append(value)
-        # 顺便更新tensorboard
-        self.tb_writer.add_scalar(key, value, len(self.args_history_dict[key]))
+        # 顺便更新tensorboard（仅在tb_writer存在时）
+        if hasattr(self, 'tb_writer') and self.tb_writer is not None:
+            self.tb_writer.add_scalar(key, value, len(self.args_history_dict[key]))
 
 
     def saveRecord(self):
-        '''以json格式保存记录
-        '''
+        """以 JSON 格式保存历史记录
+
+        将 args_history_dict 中的所有变量记录保存到 JSON 文件
+        """
         if not os.path.isdir(self.json_save_dir):os.makedirs(self.json_save_dir) 
         json_save_path = os.path.join(self.json_save_dir, 'args_history.json')
         # 保存
@@ -68,8 +87,11 @@ class ArgsHistory():
 
 
     def loadRecord(self, json_load_dir):
-        '''导入上一次训练时的args(一般用于resume)
-        '''
+        """加载上一次训练的历史记录
+
+        Args:
+            json_load_dir (str): JSON 文件所在目录（用于断点恢复）
+        """
         json_path = os.path.join(json_load_dir, 'args_history.json')
         with open(json_path, "r", encoding="utf-8") as json_file:
             self.args_history_dict = json.load(json_file)
@@ -82,7 +104,10 @@ class ArgsHistory():
 
 
 class ModelInfoLogger:
-    """模型信息记录器，用于生成类似MMDetection的模型参数表格"""
+    """模型信息记录器
+
+    用于生成类似 MMDetection 的模型参数表格，包含参数名称、形状、值范围等信息
+    """
     
     @staticmethod
     def get_parameter_info(model: nn.Module, optimizer:optim.Optimizer) -> List[Dict]:
@@ -212,12 +237,13 @@ class ModelInfoLogger:
     @staticmethod
     def get_model_summary(model: nn.Module) -> Dict:
         """获取模型摘要信息
-        
+
         Args:
-            model: 模型实例
-            
+            model (nn.Module): 模型实例
+
         Returns:
-            模型摘要信息字典
+            dict: 包含 total_parameters, trainable_parameters,
+                  non_trainable_parameters, parameter_memory_MB 的字典
         """
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -243,18 +269,30 @@ class ModelInfoLogger:
 
 
 class RunnerLogger:
-    """日志记录/打印相关
+    """训练运行日志记录器
+
+    提供日志打印、文件记录、TensorBoard 写入和模型信息打印功能
     """
-    def __init__(self, mode:str, log_dir:str, log_interval:int, eval_interval:int, batch_num:int, total_epoch:int):
-        '''生成logger日志对象用于后续打印和记录
-            Args:
-                mode:          网络模型
-                log_dir:       日志文件保存目录
-                log_interval:  日志打印间隔(几个iter打印一次)
-                eval_interval: 每隔多少epoch评估一次
-                batch_num:     一个epoch包含的batch数量
-                total_epoch:   总训练epoch
-        '''
+
+    def __init__(
+        self,
+        mode: str,
+        log_dir: str,
+        log_interval: int,
+        eval_interval: int,
+        batch_num: int,
+        total_epoch: int
+    ):
+        """初始化 RunnerLogger
+
+        Args:
+            mode (str): 运行模式，可选值：'train', 'eval', 'train_ddp'
+            log_dir (str): 日志文件保存目录
+            log_interval (int): 日志打印间隔，每隔多少个 iteration 打印一次
+            eval_interval (int): 评估间隔，每隔多少个 epoch 评估一次
+            batch_num (int): 一个 epoch 包含的 batch 数量
+            total_epoch (int): 总训练 epoch 数
+        """
         self.mode = mode
         self.log_interval = log_interval
         self.eval_interval = eval_interval
@@ -294,11 +332,14 @@ class RunnerLogger:
 
 
 
-    def log_model_info(self, model: nn.Module, optimizer:optim.Optimizer):
+    def log_model_info(self, model: nn.Module, optimizer: optim.Optimizer):
         """打印模型详细信息表格
-            Args:
-                model: 模型实例
-                optimizer: 优化器实例（用于获取真实的学习率和权重衰减）
+
+        输出模型参数量、形状、值范围、学习率和权重衰减等信息
+
+        Args:
+            model (nn.Module): 模型实例
+            optimizer: 优化器实例（用于获取真实的学习率和权重衰减）
         """
         # 保存原 formatter
         handlers = self.logger.handlers
@@ -327,16 +368,17 @@ class RunnerLogger:
 
 
 
-    def train_iter_log_printer(self, step:int, epoch:int, optimizer:optim, losses:dict):
-        """训练/验证过程中记录/打印日志
-            Args: 
-                optimizer:    优化器实例(用于打印当前学习率)
-                step:         当前迭代到第几个batch
-                epoch:        当前迭代到第几个epoch
-                losses:       当前batch的loss(字典)
-            打印效果:
-                2025-09-22 22:54:39,656: Epoch(train) [2][50/59]  lr: 0.000990  total_loss: 1.14722  cls_loss: 1.14722  acc: 0.82812  
-                2025-09-22 22:54:42,102: Epoch(train) [2][55/59]  lr: 0.000990  total_loss: 1.08477  cls_loss: 1.08477  acc: 0.73438 
+    def train_iter_log_printer(self, step: int, epoch: int, optimizer, losses: dict):
+        """训练迭代过程中记录/打印日志
+
+        Args:
+            step (int): 当前 iteration 在当前 epoch 中的索引
+            epoch (int): 当前 epoch 数
+            optimizer: 优化器实例（用于打印当前学习率）
+            losses (dict): 当前 batch 的损失字典，包含各损失项
+
+        打印效果示例:
+            2025-09-22 22:54:39: Epoch(train) [2][50/59]  lr: 0.000990  total_loss: 1.14722
         """   
         # 记录每次iter耗时
         self.interval_time = time.time() - self.last_time
@@ -348,7 +390,14 @@ class RunnerLogger:
         self.argsHistory.record('lr', current_lr)
         # 记录所有损失:
         for loss_name, loss_value in losses.items():
-            self.argsHistory.record(loss_name, loss_value.item())
+            # 处理可能的非tensor类型
+            if torch.is_tensor(loss_value):
+                self.argsHistory.record(loss_name, loss_value.item())
+            else:
+                try:
+                    self.argsHistory.record(loss_name, float(loss_value))
+                except (TypeError, ValueError):
+                    pass  # 跳过无法转换的值
         '''打印'''
         # 每间隔log_interval个iter才打印一次
         if step % self.log_interval != 0:
@@ -357,23 +406,32 @@ class RunnerLogger:
         batch_idx = '{:>{}}'.format(step, len(f"{self.batch_num}"))
         log = ("Epoch(train) [%d][%s/%d] eta: %02d:%02d  lr: %8f  ") % (epoch, batch_idx, self.batch_num, int(eta_hours), int(eta_mins), current_lr)
         for loss_name, loss_value in losses.items():
-            loss_log = (loss_name+": %.5f  " % (loss_value.item()))
+            # 处理可能的非tensor类型
+            if torch.is_tensor(loss_value):
+                loss_value = loss_value.item()
+            try:
+                loss_log = (loss_name + ": %.5f  " % float(loss_value))
+            except (TypeError, ValueError):
+                loss_log = (loss_name + ": N/A  ")
             log += loss_log
         self.logger.info(log)
 
 
 
     def train_epoch_log_printer(self, epoch, evaluations, flag_metric_name):
-        """训练/验证过程中记录/打印日志
-            Args: 
-                epoch:        当前迭代到第几个epoch
-                acc:          准确率(指标)
-                mAP:          mAP(指标)
-                mF1_score:    mF1_score(指标)
-            打印效果:
-            2025-09-22 22:56:43,934: ==================================================================================================================
-            2025-09-22 22:56:43,934: Epoch(valid) [1]  val_acc: 0.50286  val_mAP: 0.36976  val_mF1: 0.40191  best_val_epoch: 1  best_val_acc: 0.50286
-            2025-09-22 22:56:43,934: ==================================================================================================================
+        """epoch 结束时记录/打印评估日志
+
+        打印评估指标、当前最优 epoch 和最优指标值
+
+        Args:
+            epoch (int): 当前 epoch 数
+            evaluations (dict): 评估指标字典
+            flag_metric_name (str): 用于判断最优模型的指标名称
+
+        打印效果示例:
+            ==================================================================
+            Epoch(valid) [1]  val_acc: 0.50286  best_val_epoch: 1  best_val_acc: 0.50286
+            ==================================================================
         """        
         '''记录评估指标'''
         for metric_name, metric_value in evaluations.items():

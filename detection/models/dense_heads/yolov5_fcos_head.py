@@ -147,18 +147,20 @@ class YOLOv5FCOSHead(nn.Module):
         # 4. 计算损失
         '''分类损失(所有样本均参与计算)'''
         num_pos = torch.sum(pos_mask).clamp_(min=1).float()
-        # 生成one_hot标签
-        cls_targets = (torch.arange(0, self.nc, device=cls_targets.device)[None, :] == cls_targets).float()
-        cls_loss = self.cls_loss(cls_preds, cls_targets).sum() / num_pos
+        # 生成one_hot标签 (负样本标记为-1, 需要排除)
+        cls_targets_valid = cls_targets.clone()
+        cls_targets_valid[cls_targets_valid < 0] = 0  # 将-1替换为0,避免one-hot编码错误
+        cls_targets_onehot = (torch.arange(0, self.nc, device=cls_targets_valid.device)[None, :] == cls_targets_valid).float()
+        # 负样本位置的one-hot保持全0
+        cls_targets_onehot[~pos_mask] = 0
+        cls_loss = self.cls_loss(cls_preds, cls_targets_onehot).sum() / num_pos
         
         '''centerness损失(正样本才计算)'''
         cnt_loss = self.cnt_loss(cnt_preds[pos_mask], cnt_targets[pos_mask])
         
         '''回归损失(正样本才计算)'''
         reg_preds_pos, reg_targets_pos = reg_preds[pos_mask], reg_targets[pos_mask]
-        # FCOS 的 L,T 坐标系处理
-        reg_preds_pos[:, :2] *= -1
-        reg_targets_pos[:, :2] *= -1
+        # FCOS 预测的是到四边的距离 (l, t, r, b)，不需要取负
         reg_loss = self.reg_loss(reg_preds_pos, reg_targets_pos)
 
         '''loss统一为字典格式输出'''

@@ -186,22 +186,26 @@ def worker_init_fn(worker_id, seed, rank=0):
 
 
 def accelerate_worker_init_fn(worker_id):
-    """使用accelerate封装后使用的worker_init_fn, 乌苏再手动传seed和rank
+    """使用accelerate封装后使用的worker_init_fn, 无需再手动传seed和rank
     """
     worker_info = torch.utils.data.get_worker_info()
     # 每个 worker 的基础种子来源于主进程
     seed = torch.initial_seed() % 2**32
     np.random.seed(seed)
     random.seed(seed)
+    torch.manual_seed(seed)
 
 
 
 def set_dataloader_epoch(dataloader, epoch, base_seed):
     """保证 DataLoader resume 后的随机性与原训练一致
+
+    处理 DistributedSampler 和 RandomSampler 的 epoch 设置
+
     Args:
         dataloader: DataLoader 对象
-        epoch:      当前 epoch
-        base_seed:  训练时固定的基础随机种子
+        epoch (int): 当前 epoch
+        base_seed (int): 训练时固定的基础随机种子
     """
     # 处理 DistributedSampler
     # DDP时, 通过维持各个进程之间的相同随机数种子使不同进程能获得同样的shuffle效果

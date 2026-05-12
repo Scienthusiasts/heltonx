@@ -55,8 +55,11 @@ model_cfgs = dict(
     backbone=dict(
         type="DINOv3STA",
         dino_name="vit_small_patch16_dinov3.lvd1689m",
+        dino_dim=384,
+        dino_out_indices=[5, 8, 11],
         sta_layer_dims=[64, 128, 128, 256, 512],
         fuse_layer_dims=[128, 256, 512],
+        out_layers=[2, 3, 4],
         dino_ckpt="ckpts/vit_small_patch16_dinov3.lvd1689m.pt",
         froze_dino=True
     ), 

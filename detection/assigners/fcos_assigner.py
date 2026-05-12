@@ -59,7 +59,8 @@ class FCOSAssigner(nn.Module):
         # 1.mask_in_gtboxes筛选那些落在真实框内的特征点
         mask_in_gtboxes = off_min > 0
         # 2.mask_in_level筛选哪些gt适合在当前特征层进行检测
-        mask_in_level = (off_max > limit_range[0]) & (off_max <= limit_range[1])
+        # 修复边界条件检查，使用 >= 确保正确处理边界情况
+        mask_in_level = (off_max >= limit_range[0]) & (off_max <= limit_range[1])
         # 在radiu半径圆内的grid作为正样本
         radiu       = stride * self.sample_radiu_ratio
         # 计算gt中心点与grid中心点两两距离

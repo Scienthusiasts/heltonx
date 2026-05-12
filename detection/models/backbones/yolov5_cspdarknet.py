@@ -55,6 +55,14 @@ class YOLOv5CSPDarknet(nn.Module):
 
 
     def forward(self, x):
+        """前向传播
+
+        Args:
+            x (Tensor): 输入图像张量 [B, 3, H, W]
+
+        Returns:
+            List[Tensor]: 多尺度特征图列表，按 out_layers 顺序返回
+        """
         p1 = self.stem(x)
         p2 = self.dark2(p1)
         p3 = self.dark3(p2)

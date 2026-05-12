@@ -13,8 +13,14 @@ import matplotlib.pyplot as plt
 
 
 def reshape_cat_out(inputs):
-    '''将不同尺度的预测结果拼在一起
-    '''
+    """将不同尺度的预测结果拼在一起
+
+    Args:
+        inputs (List[Tensor]): 多尺度预测结果列表，每个元素形状为 [bs, C, H, W]
+
+    Returns:
+        Tensor: 拼接后的预测结果，形状为 [bs, total_points, C]
+    """
     out=[]
     for pred in inputs:
         pred = pred.permute(0, 2, 3, 1)
@@ -30,14 +36,16 @@ def reshape_cat_out(inputs):
 
 
 def vis_FCOS_heatmap(cls_logits, cnt_logits, ori_shape, input_shape, image, save_vis_path=None):
-    '''可視化 FCOS obj_heatmap
-        Args:
-            - predicts:    多尺度特征圖
-            - ori_shape:   原圖像尺寸
-            - input_shape: 网络接收的尺寸
-            - padding:     输入网络时是否灰边填充处理
-        Returns:
-    '''
+    """可视化 FCOS obj_heatmap
+
+    Args:
+        cls_logits (List[Tensor]): 分类预测 logits 列表
+        cnt_logits (List[Tensor]): 中心度预测 logits 列表
+        ori_shape (Tuple[int, int]): 原图尺寸 (W, H)
+        input_shape (List[int]): 网络接收的尺寸
+        image (Tensor): 输入图像张量
+        save_vis_path (str): 可视化结果保存路径，可选
+    """
     W, H = ori_shape
     mean = np.array([0.485, 0.456, 0.406]) 
     std = np.array([[0.229, 0.224, 0.225]]) 

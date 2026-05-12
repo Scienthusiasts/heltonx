@@ -92,10 +92,10 @@ class YOLOv5Assigner(nn.Module):
                     if not valid_anchors[mask]:
                         continue
                     # 获得真实框属于哪个网格点(会取整)
-                    # 计算当前GT点的左上角x0对应网格的x索引
-                    i = int(np.floor(scaled_targets[gt_id, 0]))
-                    # 计算当前GT点的左上角y0对应网格的y索引
-                    j = int(np.floor(scaled_targets[gt_id, 1]))
+                    # 计算当前GT点的左上角x0对应网格的x索引，使用 clamp 防止越界
+                    i = int(np.floor(np.clip(scaled_targets[gt_id, 0], 0, feat_w - 1)))
+                    # 计算当前GT点的左上角y0对应网格的y索引，使用 clamp 防止越界
+                    j = int(np.floor(np.clip(scaled_targets[gt_id, 1], 0, feat_h - 1)))
                     # 获取当前+附近的网格点偏移(这一步为了增加正样本数量)
                     offsets = self.get_near_points(scaled_targets[gt_id, 0], scaled_targets[gt_id, 1], i, j)
                     '''对每个正样本, 计算在特征图上的位置与gt value并记录到output_targets中'''
@@ -132,21 +132,26 @@ class YOLOv5Assigner(nn.Module):
 
 
     def get_near_points(self, x, y, i, j):
-        '''获得正样本周围的两个相邻点,也作为正样本
+        '''获得正样本周围的相邻网格点,也作为正样本（与官方一致，最多5个点）
+           官方逻辑: 当GT中心靠近网格边界时，同时扩展到两个相邻方向，
+           最多产生5个正样本网格点: [0,0], [1,0], [0,1], [-1,0], [0,-1]
         '''
         sub_x = x - i
         sub_y = y - j
-        # scale_gt位于网格的第三象限
-        if sub_x > 0.5 and sub_y > 0.5:
-            return [[0, 0], [1, 0], [0, 1]]
-        # scale_gt位于网格的第二象限
-        elif sub_x < 0.5 and sub_y > 0.5:
-            return [[0, 0], [-1, 0], [0, 1]]
-        # scale_gt位于网格的第一象限
-        elif sub_x < 0.5 and sub_y < 0.5:
-            return [[0, 0], [-1, 0], [0, -1]]
-        # scale_gt位于网格的第四象限
+        # 始终包含中心点
+        offsets = [[0, 0]]
+        # 当GT中心靠近网格右边界(x > 0.5)时，扩展到右侧网格
+        if sub_x > 0.5:
+            offsets.append([1, 0])
+        # 当GT中心靠近网格左边界(x < 0.5)时，扩展到左侧网格
         else:
-            return [[0, 0], [1, 0], [0, -1]]
+            offsets.append([-1, 0])
+        # 当GT中心靠近网格下边界(y > 0.5)时，扩展到下方网格
+        if sub_y > 0.5:
+            offsets.append([0, 1])
+        # 当GT中心靠近网格上边界(y < 0.5)时，扩展到上方网格
+        else:
+            offsets.append([0, -1])
+        return offsets
 
 

@@ -124,7 +124,14 @@ class ConvBlock(nn.Module):
 
 @MODELS.register
 class C2fPAFPN(nn.Module):
-    """YOLOv8-style Path Aggregation PAFPN"""
+    """YOLOv8-style Path Aggregation PAFPN
+
+    Args:
+        in_channels (List[int]): 各层输入通道数，如 [512, 1024, 2048]
+        out_channel (int): 输出通道数，默认 256
+        num_extra_levels (int): 额外下采样层数量，默认 2 (P6, P7)
+        C2f_n (int): C2f 模块中的 Bottleneck 数量，默认 1
+    """
     def __init__(self, in_channels, out_channel=256, num_extra_levels=2, C2f_n=1):
         super().__init__()
         self.num_levels = len(in_channels)

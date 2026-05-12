@@ -49,19 +49,19 @@ class COCODataset(BaseDetDataset):
         self.map = map
         self.inv_map = {v: k for k, v in self.map.items()} if self.map else None
                 
-        '''使用通用 DDP 加载(只在rank0加载数据, 其他rank与rank0通信获取)'''
+        '''使用通用 DDP 加载(只在rank0计算过滤结果, 各rank独立初始化COCO API)'''
+        # 各 rank 独立初始化 COCO API（读取本地 annotation JSON，无状态共享需求）
+        self.coco = COCO(self.ann_json_path)
+
         def _load_data():
-            # 为实例注释初始化COCO的API
-            coco = COCO(self.ann_json_path)
             # 获取数据集中所有图像对应的imgId
-            img_inds = coco.getImgIds()
-            # 过滤掉那些没有框的图像
-            filter_img_inds = self.filter_img_by_id(coco, img_inds)
+            img_inds = self.coco.getImgIds()
+            # 过滤掉那些没有框的图像（仅在 rank 0 执行，结果广播给其他 rank）
+            filter_img_inds = self.filter_img_by_id(self.coco, img_inds)
             # 数据集大小
             dataset_num = len(filter_img_inds)
-            return dict(coco=coco, img_inds=img_inds, filter_img_inds=filter_img_inds, dataset_num=dataset_num)
+            return dict(img_inds=img_inds, filter_img_inds=filter_img_inds, dataset_num=dataset_num)
         data = self.ddp_safe_load(_load_data)
-        self.coco = data['coco']
         self.img_inds = data['img_inds']
         self.filter_img_inds = data['filter_img_inds']
         self.dataset_num = data['dataset_num']
@@ -132,22 +132,42 @@ class COCODataset(BaseDetDataset):
 
 
     def filter_img_by_id(self, coco, img_inds):
-        '''过滤掉那些没标注的图像
+        '''过滤掉没有有效标注的图像
+
+        优化：一次性加载全部 anns/imgInfos 构建 {imgId: ann_list} 和 {imgId: img_info} 映射，
+        避免对每张图像重复调用 getAnnIds / loadImgs（118K → 1 次调用）。
         '''
         print('filtering no objects images...')
-        
+
+        # 一次性加载全部 anns，构建 {imgId: ann_list} 映射
+        all_ann_ids = coco.getAnnIds()
+        all_anns = coco.loadAnns(all_ann_ids)
+        img_id_to_anns = {}
+        for ann in tqdm(all_anns, desc='building img->ann map'):
+            img_id = ann['image_id']
+            if img_id not in img_id_to_anns:
+                img_id_to_anns[img_id] = []
+            img_id_to_anns[img_id].append(ann)
+
+        # 一次性加载全部 image info（触发 coco.imgs 填充整个 dict）
+        # 使用传入的 img_inds（即全部 imgId），避免重复调用 coco.getImgIds()
+        coco.loadImgs(img_inds)  # 内部会填充 coco.imgs dict
+        ignore_names = {'000000200365.jpg', '000000550395.jpg', '9999985_00000_d_0000020.jpg'}
+
         filter_img_inds = []
-        for i in tqdm(range(len(img_inds))):
-            # 获取图像信息(json文件 "images" 字段)
-            img_infos = coco.loadImgs(img_inds[i])[0]
-            # 得到当前图像里包含的BBox的所有id
-            ann_inds = coco.getAnnIds(imgIds=img_infos['id'])
-            # anns (json文件 "annotations" 字段)
-            anns = coco.loadAnns(ann_inds)
-            if len(anns)!=0:
-                # 专门针对COCO数据集,这两张图片存在bbox的w或h=0的情况:
-                if img_infos['file_name'] not in ['000000200365.jpg', '000000550395.jpg', '9999985_00000_d_0000020.jpg']:
-                    filter_img_inds.append(img_inds[i])
+        for img_id in tqdm(img_inds, desc='filtering imgs'):
+            anns = img_id_to_anns.get(img_id, [])
+            if len(anns) == 0:
+                continue
+            # 跳过所有 ann 均为 iscrowd 的图像
+            if all(ann.get('iscrowd', 0) for ann in anns):
+                continue
+            # 特殊文件名过滤（存在 w/h=0 的 bbox）
+            img_info = coco.imgs.get(img_id)
+            if img_info and img_info['file_name'] in ignore_names:
+                continue
+            filter_img_inds.append(img_id)
+
         return filter_img_inds
 
 
@@ -250,7 +270,7 @@ if __name__ == '__main__':
             img_size=[800, 800], 
             mode='train', 
             mosaic_p=0.5, 
-            mixup_p=0.5,
+            mixup_p=0.0,
             map=cat_maps
         ),
         bs=16,

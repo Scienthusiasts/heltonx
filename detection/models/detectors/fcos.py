@@ -12,12 +12,22 @@ from detection.utils.nms import NMS
 
 @MODELS.register
 class FCOS(nn.Module):
-    '''完整FCOS网络架构
-    '''
-    def __init__(self, backbone:nn.Module, fpn:nn.Module, head:nn.Module, img_size, nc, load_ckpt, nms_score_thr, nms_iou_thr, nms_agnostic, bbox_coder:nn.Module):
-        """
-        """
-        super(FCOS, self).__init__()
+    """完整FCOS网络架构
+
+    Args:
+        backbone (nn.Module): 骨干网络，用于特征提取
+        fpn (nn.Module): FPN 特征金字塔网络
+        head (nn.Module): FCOS 检测头
+        img_size (List[int]): 输入图像尺寸，如 [640, 640]
+        nc (int): 类别数量
+        load_ckpt (str): 预训练权重路径
+        nms_score_thr (float): NMS 置信度阈值
+        nms_iou_thr (float): NMS IOU 阈值
+        nms_agnostic (bool): NMS 是否类别无关
+        bbox_coder (nn.Module): bbox 编解码器
+    """
+    def __init__(self, backbone, fpn, head, img_size, nc, load_ckpt, nms_score_thr, nms_iou_thr, nms_agnostic, bbox_coder):
+        super().__init__()
         self.nms = NMS()
         self.bbox_coder = bbox_coder
         # 基本参数

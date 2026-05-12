@@ -90,50 +90,53 @@ class Transforms():
                 jitter: 长宽缩放尺寸的范围
                 scale:  尺度缩放的最小值
         """
-        W, H = self.img_size
+        H, W = self.img_size
         # 随机选取放置图像的中心位置
         cx = int(random.uniform(0.3, 0.7) * W)
         cy = int(random.uniform(0.3, 0.7) * H)
-        mosaic_img = np.ones((W, H, 3), dtype=np.uint8) * 128
+        # OpenCV 使用 (H, W, C) 格式
+        mosaic_img = np.ones((H, W, 3), dtype=np.uint8) * 128
         for i in range(4):
             bboxes[i] = np.array(bboxes[i])
             labels[i] = np.array(labels[i])
-            w, h, _ = images[i].shape
+            h, w, _ = images[i].shape
             # 对图像进行缩放并且进行长和宽的扭曲
             scale = random.uniform(scale, 1)
             scale_w = random.uniform(1-jitter,1+jitter) * scale
             scale_h = random.uniform(1-jitter,1+jitter) * scale
             new_w, new_h = int(w * scale_w), int(h * scale_h)
             # 对图像进行缩放
-            images[i] = cv2.resize(images[i], (new_h, new_w))
+            images[i] = cv2.resize(images[i], (new_w, new_h))
             # 对box进行缩放
-            bboxes[i][:, [0,2]] *= scale_h
-            bboxes[i][:, [1,3]] *= scale_w
+            bboxes[i][:, [0,2]] *= scale_w
+            bboxes[i][:, [1,3]] *= scale_h
             # 图像mosaic到一张图像上:
+            # numpy数组索引: [y_start:y_end, x_start:x_end, :]
             if i==0: 
-                mosaic_img[max(cx-new_w, 0):cx, max(cy-new_h, 0):cy, :] = images[i][max(0, new_w-cx):, max(0, new_h-cy):, :]
+                mosaic_img[max(cy-new_h, 0):cy, max(cx-new_w, 0):cx, :] = images[i][max(0, new_h-cy):, max(0, new_w-cx):, :]
                 # 对图像进行平移
-                bboxes[i][:,0] += (cy-new_h)
-                bboxes[i][:,1] += (cx-new_w)
+                bboxes[i][:,0] += (cx-new_w)
+                bboxes[i][:,1] += (cy-new_h)
             if i==1:
-                mosaic_img[cx:min(W, cx+new_w), max(cy-new_h, 0):cy, :] = images[i][:min(new_w, W-cx), max(0, new_h-cy):, :]
+                mosaic_img[max(cy-new_h, 0):cy, cx:min(W, cx+new_w), :] = images[i][max(0, new_h-cy):, :min(new_w, W-cx), :]
                 # 对图像进行平移
-                bboxes[i][:,0] += (cy-new_h)
-                bboxes[i][:,1] += cx
+                bboxes[i][:,0] += cx
+                bboxes[i][:,1] += (cy-new_h)
             if i==2: 
-                mosaic_img[max(cx-new_w, 0):cx, cy:min(H, cy+new_h), :] = images[i][max(0, new_w-cx):, :min(new_h, H-cy), :]
+                mosaic_img[cy:min(H, cy+new_h), max(cx-new_w, 0):cx, :] = images[i][:min(new_h, H-cy), max(0, new_w-cx):, :]
                 # 对图像进行平移
-                bboxes[i][:,0] += cy
-                bboxes[i][:,1] += (cx-new_w)
+                bboxes[i][:,0] += (cx-new_w)
+                bboxes[i][:,1] += cy
             if i==3: 
                 # 对图像进行平移
-                bboxes[i][:,0] += cy
-                bboxes[i][:,1] += cx
-                mosaic_img[cx:min(W, cx+new_w), cy:min(H, cy+new_h), :] = images[i][:min(new_w, W-cx), :min(new_h, H-cy), :]
+                bboxes[i][:,0] += cx
+                bboxes[i][:,1] += cy
+                mosaic_img[cy:min(H, cy+new_h), cx:min(W, cx+new_w), :] = images[i][:min(new_h, H-cy), :min(new_w, W-cx), :]
             # 和边界处理 + 舍弃太小的框
             bboxes[i][:,2] += bboxes[i][:,0]
             bboxes[i][:,3] += bboxes[i][:,1]
-            bboxes[i] = np.clip(bboxes[i], 0, self.img_size[0])
+            bboxes[i][:, [0,2]] = np.clip(bboxes[i][:, [0,2]], 0, W)
+            bboxes[i][:, [1,3]] = np.clip(bboxes[i][:, [1,3]], 0, H)
             bboxes[i][:,2] -= bboxes[i][:,0]
             bboxes[i][:,3] -= bboxes[i][:,1]
             keep = np.where(np.logical_and(bboxes[i][:,2]>4, bboxes[i][:,3]>4))[0]
@@ -141,6 +144,7 @@ class Transforms():
             labels[i] = labels[i][keep]
 
         labels = np.concatenate(labels, axis=0)
+        bboxes = [np.array(b).reshape(-1, 4) if len(b) > 0 else np.zeros((0, 4)) for b in bboxes]
         bboxes = np.concatenate(bboxes, axis=0)
 
         return mosaic_img, bboxes, labels
@@ -155,8 +159,11 @@ class Transforms():
                 labels: list(labels1, labels2)
         """
         # mixup 两张图像所占比例(分布在0.5附近)
-        r = np.random.beta(32.0, 32.0)  
+        r = np.random.beta(32.0, 32.0)
         mixup_image = (images[0] * r + images[1] * (1 - r))
-        mixup_labels = labels[0] + labels[1]
-        mixup_boxes = bboxes[0] + bboxes[1]
+        # 标签和框应该拼接而不是相加
+        mixup_labels = np.concatenate(labels, axis=0)
+        # 确保 bbox 数组维度一致: 空 bbox 统一为 (0, 4) 避免 concatenate 报错
+        bboxes = [np.array(b).reshape(-1, 4) if len(b) > 0 else np.zeros((0, 4)) for b in bboxes]
+        mixup_boxes = np.concatenate(bboxes, axis=0)
         return mixup_image, mixup_boxes, mixup_labels

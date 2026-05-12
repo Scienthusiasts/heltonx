@@ -28,7 +28,7 @@ def load_state_dict_with_prefix(model, load_ckpt, prefixes_to_try=['model.', 'mo
     use_ddp = dist.is_initialized()
     if not state_dict:
         if not use_ddp or use_ddp and dist.get_rank() == 0:
-            print(f"➡️  loadong ckpt: {load_ckpt}")
+            print(f"➡️  loading ckpt: {load_ckpt}")
 
         state_dict = torch.load(load_ckpt, map_location='cpu')
     
@@ -126,53 +126,57 @@ def load_state_dict_with_prefix(model, load_ckpt, prefixes_to_try=['model.', 'mo
 
 
 
-def save_ckpt(epoch, eval_interval, model, scheduler, log_dir, argsHistory, flag_metric_name=None):
-    '''保存权重和训练断点
-        Args:
-            - epoch:       当前epoch
-            - model:       网络模型实例
-            - scheduler:   学习率策略实例(包含优化器)
-            - log_dir:     日志文件保存目录
-            - argsHistory: 日志文件记录实例
-            - logger:      日志输出实例
+def save_ckpt(epoch, eval_interval, model, scheduler, log_dir, args_history, flag_metric_name=None):
+    """保存模型权重和训练断点
 
-        Returns:
-            None
-    '''  
+    Args:
+        epoch (int): 当前epoch数
+        eval_interval (int): 评估间隔，每隔多少个epoch评估一次
+        model (nn.Module): 网络模型实例，支持DDP封装
+        scheduler: 学习率调度器实例（包含优化器）
+        log_dir (str): 日志文件保存目录
+        args_history: 训练参数历史记录实例
+        flag_metric_name (str, optional): 用于判断最优模型的指标名称，默认None
+    """
     # ckpt一定不包含ddp那层封装的module
     ckpt = model.module.state_dict() if isinstance(model, DDP) else model.state_dict()
     # checkpoint_dict能够恢复断点训练
+    # 注意：checkpoint_dict 中保存的是未解包的 state_dict，用于 resume 时能正确加载
     checkpoint_dict = {
-        'epoch': epoch, 
-        'model_state_dict': model.state_dict(), 
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),  # 未解包的 state_dict，用于 resume
         'optim_state_dict': scheduler.optimizer.state_dict(),
         'sched_state_dict': scheduler.base_scheduler.state_dict()
-        }
+    }
     torch.save(checkpoint_dict, os.path.join(log_dir, f"train_epoch{epoch}.pt"))
+    # 保存 ckpt（已解包的）用于推理或微调
     torch.save(ckpt, os.path.join(log_dir, "last.pt"))
     # 如果本次Epoch的参考指标最大，则保存网络参数
     if flag_metric_name:
-        flag_metric_list = argsHistory.args_history_dict[flag_metric_name]
+        flag_metric_list = args_history.args_history_dict[flag_metric_name]
         best_flag_metric_val = max(flag_metric_list)
-        best_epoch = flag_metric_list.index(best_flag_metric_val) + 1
-        if epoch == best_epoch * eval_interval:
+        # 找到所有最大值对应的 epoch（可能有多个相同最大值）
+        best_epochs = [i + 1 for i, v in enumerate(flag_metric_list) if v == best_flag_metric_val]
+        if epoch in [e * eval_interval for e in best_epochs]:
             torch.save(ckpt, os.path.join(log_dir, f'best_{flag_metric_name}.pt'))
 
 
 
 
 def train_resume(resume, model, optimizer, scheduler, runner_logger, batch_nums):
-    '''保存权重和训练断点
-        Args:
-            resume:      是否恢复断点训练
-            model:       网络模型
-            optimizer:   优化器
-            runner_logger:      日志输出实例
-            scheduler:
-            batch_nums:
-        Returns:
-            None
-    '''  
+    """恢复断点训练
+
+    Args:
+        resume (str): 断点checkpoint文件路径
+        model (nn.Module): 网络模型实例
+        optimizer: 优化器实例
+        scheduler: 学习率调度器实例
+        runner_logger: 运行日志记录器实例
+        batch_nums (int): 每个epoch包含的batch数量
+
+    Returns:
+        int: 恢复后的起始epoch数
+    """  
     ckpt = torch.load(resume, map_location="cpu")
     # resume后开始的epoch
     resume_epoch = ckpt['epoch'] + 1

@@ -6,7 +6,7 @@ from utils.utils import init_weights
 from heltonx.utils.register import MODELS
 from detection.utils.fcos_utils import *
 from detection.losses import *
-from detection.utils.yolov5_utils import *
+from detection.utils.yolov5_utils import smooth_labels
 
 
 
@@ -14,10 +14,24 @@ from detection.utils.yolov5_utils import *
 
 @MODELS.register
 class YOLOv5Head(nn.Module):
-    def __init__(self, phi, nc, img_size, anchors, anchors_mask, cls_loss:nn.Module, box_loss:nn.Module, obj_loss:nn.Module, assigner:nn.Module, layers_num=3, label_smoothing=0):
-        """
-        """
-        super(YOLOv5Head, self).__init__()
+    """YOLOv5 检测头模块 (耦合式检测头)
+
+    Args:
+        phi (str): 模型规模标识，可选 'n', 's', 'm', 'l', 'x'
+        nc (int): 类别数量
+        img_size (List[int]): 输入图像尺寸，如 [640, 640]
+        anchors (List[List[int]]): 先验框列表
+        anchors_mask (List[List[int]]): 先验框掩码
+        cls_loss (nn.Module): 分类损失函数
+        box_loss (nn.Module): 边界框损失函数
+        obj_loss (nn.Module): 目标置信度损失函数
+        assigner (nn.Module): 正负样本分配器
+        bbox_coder (nn.Module): bbox 编解码器
+        layers_num (int): 特征层数量，默认 3
+        label_smoothing (float): 标签平滑参数，默认 0
+    """
+    def __init__(self, phi, nc, img_size, anchors, anchors_mask, cls_loss, box_loss, obj_loss, assigner, bbox_coder, layers_num=3, label_smoothing=0):
+        super().__init__()
         '''基本配置'''
         depth_dict          = {'n': 0.33, 's' : 0.33, 'm' : 0.67, 'l' : 1.00, 'x' : 1.33,}
         width_dict          = {'n': 0.25, 's' : 0.50, 'm' : 0.75, 'l' : 1.00, 'x' : 1.25,}
@@ -25,17 +39,19 @@ class YOLOv5Head(nn.Module):
         base_channels       = int(wid_mul * 64)  
         base_depth          = max(round(dep_mul * 3), 1)  
 
-        # 自适应调整不同损失的权重，在COCO数据集下，默认回归损失权重0.05, 分类损失权重1 obj损失权重0.5
-        self.box_ratio = 0.05
-        self.obj_ratio = 1   #* (img_size[0] * img_size[1]) / (640 ** 2)
-        self.cls_ratio = 0.5 #* (self.num_classes / 80)
+        # 自适应调整不同损失的权重（与官方一致）
+        # 官方逻辑: box *= 3/nl, cls *= (nc/80)*(3/nl), obj *= (imgsz/640)^2*(3/nl)
+        nl = layers_num
+        self.box_ratio = 0.05 * (3 / nl)
+        self.obj_ratio = 1.0 * (img_size[0] * img_size[1]) / (640 ** 2) * (3 / nl)
+        self.cls_ratio = 0.5 * (nc / 80) * (3 / nl)
         print(f'box_loss_ratio:{self.box_ratio} | obj_loss_ratio:{self.obj_ratio} | cls_loss_ratio:{self.cls_ratio}')
 
         # 使用几层特征图
         self.layers_num = layers_num
         s = [4, 8, 16]
         # 包含每个尺度的head(一个尺度一个head, 不共享)
-        self.p_heads = nn.ModuleList([CoupledConvHead(i, nc, img_size, anchors, base_channels*s[i], anchors_mask, cls_loss, box_loss, obj_loss, label_smoothing) for i in range(layers_num)])
+        self.p_heads = nn.ModuleList([CoupledConvHead(i, nc, img_size, anchors, base_channels*s[i], anchors_mask, cls_loss, box_loss, obj_loss, bbox_coder, label_smoothing) for i in range(layers_num)])
         '''正负样本分配'''
         self.assigner = assigner
         self.anchors = anchors
@@ -44,22 +60,37 @@ class YOLOv5Head(nn.Module):
         self.nc = nc
 
     def forward(self, x):
-        '''前向传播
-        '''
+        """前向传播
+
+        Args:
+            x (List[Tensor]): 多尺度特征图列表
+
+        Returns:
+            preds (List[Tensor]): 各层预测结果
+        """
         preds = []
         for i in range(self.layers_num):
-            pred = self.p_heads[i](x[i]) 
+            pred = self.p_heads[i](x[i])
             preds.append(pred)
 
         return preds
 
     def loss(self, x, batch_bboxes, batch_labels):
-        '''前向传播+计算损失
-        '''
+        """计算损失
+
+        Args:
+            x (List[Tensor]): 多尺度特征图列表
+            batch_bboxes (List[Tensor]): batch 内各图像的 GT 框
+            batch_labels (List[Tensor]): batch 内各图像的 GT 类别
+
+        Returns:
+            losses (Dict[str, Tensor]): 各损失组成的字典
+        """
         '''正负样本分配'''
         y_trues = [[] for _ in range(self.layers_num)]
         for bboxes, labels in zip(batch_bboxes, batch_labels):
             # coco格式转成YOLO格式(xywh -> norm(cxcywh)):
+            print(bboxes.shape)
             bboxes[:, 0] += bboxes[:, 2] / 2
             bboxes[:, 1] += bboxes[:, 3] / 2
             bboxes[:, [0, 2]] = bboxes[:, [0, 2]] / self.img_size[1]
@@ -92,14 +123,23 @@ class YOLOv5Head(nn.Module):
 
 
 class CoupledConvHead(nn.Module):
-    def __init__(self, l, cat_nums, img_size, anchors, in_channels, anchors_mask, cls_loss:nn.Module, box_loss:nn.Module, obj_loss:nn.Module, label_smoothing=0):
-        '''Head
-            Args:
+    """YOLOv5 单层耦合卷积检测头
 
-            Returns:
-                None
-        '''
-        super(CoupledConvHead, self).__init__()
+    Args:
+        l (int): 当前层索引 (0: P3, 1: P4, 2: P5)
+        cat_nums (int): 类别数量
+        img_size (List[int]): 输入图像尺寸
+        anchors (List[List[int]]): 先验框列表
+        in_channels (int): 输入通道数
+        anchors_mask (List[int]): 先验框掩码
+        cls_loss (nn.Module): 分类损失函数
+        box_loss (nn.Module): 边界框损失函数
+        obj_loss (nn.Module): 目标置信度损失函数
+        bbox_coder (nn.Module): bbox 编解码器
+        label_smoothing (float): 标签平滑参数，默认 0
+    """
+    def __init__(self, l, cat_nums, img_size, anchors, in_channels, anchors_mask, cls_loss, box_loss, obj_loss, bbox_coder, label_smoothing=0):
+        super().__init__()
         # 当前head提取fpn哪一层特征(0:P3 1:P4 2:P5)
         self.l = l
         self.label_smoothing = label_smoothing
@@ -114,6 +154,7 @@ class CoupledConvHead(nn.Module):
         self.cls_loss = cls_loss
         self.box_loss = box_loss
         self.obj_loss = obj_loss  
+        self.bbox_coder = bbox_coder
 
         '''网络部分, YOLOv5 head是耦合的'''
         self.head = nn.Conv2d(in_channels, len(anchors_mask) * (5 + self.num_classes), 1)
@@ -124,25 +165,40 @@ class CoupledConvHead(nn.Module):
 
 
     def forward(self, x):
-        '''前向传播
-        '''
-        predict = self.head(x) 
-        return predict 
+        """单层前向传播
+
+        Args:
+            x (Tensor): 输入特征图
+
+        Returns:
+            predict (Tensor): 预测结果
+        """
+        predict = self.head(x)
+        return predict
 
 
 
     def loss(self, fpn_single_feat, y_true):
+        """计算单层损失
+
+        Args:
+            fpn_single_feat (Tensor): 单层 FPN 特征图
+            y_true (Tensor): 真实标签
+
+        Returns:
+            Tuple[Tensor, Tensor, Tensor]: (box_loss, cls_loss, obj_loss)
+        """
         # 前向，获得网络预测结果
         input = self.forward(fpn_single_feat)
         #  获得bs，特征层的高和宽
         bs = input.size(0)
         in_h = input.size(2)
         in_w = input.size(3)
-        # stride_h = stride_w = 32、16、8 (下采样率)
-        stride_h = self.img_size[0] / in_h
-        stride_w = self.img_size[1] / in_w
+        # 使用固定下采样率, 不依赖img_size, 避免非正方形图像时stride计算错误
+        strides = [8, 16, 32]
+        stride = strides[self.l]
         # 此时获得的scaled_anchors大小是相对于特征层的
-        scaled_anchors  = [(a_w / stride_w, a_h / stride_h) for a_w, a_h in self.anchors]
+        scaled_anchors  = [(a_w / stride, a_h / stride) for a_w, a_h in self.anchors]
         # torch.Size([bs, 255, w, h]) -> torch.Size([bs, 3, w, h, 85]) (85 : cx, cy, w, h, obj_score, cls_score=80)
         prediction = input.view(bs, len(self.anchors_mask[self.l]), self.num_classes+5, in_h, in_w).permute(0, 1, 3, 4, 2).contiguous()
 
@@ -156,7 +212,7 @@ class CoupledConvHead(nn.Module):
 
         # 将预测结果进行解码, 即将预测offset作用到anchors上(基于特征图尺寸的cxcywh)
         # pred_boxes.shape = torch.Size([bs, 3, w, h, 4])
-        pred_boxes = YOLOv5Reg2Box(bs, self.l, x, y, h, w, self.anchors_mask, scaled_anchors, in_h, in_w)
+        pred_boxes = self.bbox_coder.reg2box(bs, self.l, x, y, h, w, scaled_anchors, in_h, in_w)
         y_true = y_true.type_as(x)
         
         box_loss, cls_loss = 0, 0

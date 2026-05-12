@@ -1,4 +1,8 @@
 # coding=utf-8
+"""
+HeltonX 训练框架 - Accelerate 加速实现
+提供基于 Hugging Face Accelerate 的分布式训练支持
+"""
 import os
 import json
 import torch
@@ -8,7 +12,7 @@ from tqdm import tqdm
 import torch.backends.cudnn as cudnn
 from functools import partial
 from torch.utils.data import DataLoader
-from accelerate import Accelerator  
+from accelerate import Accelerator
 
 from heltonx.optimization import *
 from heltonx.utils.utils import seed_everything, accelerate_worker_init_fn, worker_init_fn, get_args, dynamic_import_class, to_device
@@ -19,24 +23,41 @@ from heltonx.utils.register import MODELS, DATASETS, OPTIMIZERS, SCHEDULERS, EVA
 
 
 
-class Trainer():
-    """整合训练/验证/推理时的抽象流程"""
-    def __init__(self, mode, epoch, seed, log_dir, log_interval, eval_interval, resume_path, model_cfgs, dataset_cfgs, optimizer_cfgs, scheduler_cfgs, grad_accumulate=None, grad_clip=None):
-        """初始化各种模块
-            Args:
-                mode:               train, train_ddp
-                epoch:              训练多少轮
-                seed:               全局种子
-                log_dir:
-                log_interval:
-                eval_interval:
-                resume_path:
-                model_cfgs:         和网络模型有关的配置参数
-                dataset_cfgs:       和数据集有关的配置参数
-                optimizer_cfgs:     和优化器有关的配置参数
-                scheduler_cfgs:     和学习率衰减策略有关的配置参数
-                grad_accumulate:    是否开启梯度累加策略(不额外增加显存占用, 增大bs)
-                grad_clip:          梯度裁剪, 训练LLM时通常使用, 避免梯度爆炸
+class Trainer:
+    """训练器类，整合训练/验证/推理时的抽象流程（基于 Accelerate 实现）"""
+
+    def __init__(
+        self,
+        mode,
+        epoch,
+        seed,
+        log_dir,
+        log_interval,
+        eval_interval,
+        resume_path,
+        model_cfgs,
+        dataset_cfgs,
+        optimizer_cfgs,
+        scheduler_cfgs,
+        grad_accumulate=None,
+        grad_clip=None
+    ):
+        """初始化训练器模块
+
+        Args:
+            mode (str): 训练模式，支持 'train', 'train_ddp' 等
+            epoch (int): 训练轮数
+            seed (int): 全局随机种子，用于复现实验结果
+            log_dir (str): 日志文件保存目录
+            log_interval (int): 日志打印间隔，每隔多少个iteration打印一次
+            eval_interval (int): 评估间隔，每隔多少个epoch进行一次评估
+            resume_path (str): 断点恢复路径，若为None则从头开始训练
+            model_cfgs (dict): 网络模型配置参数，包含模型类型和初始化参数
+            dataset_cfgs (dict): 数据集配置参数，包含数据集路径、batch_size等
+            optimizer_cfgs (dict): 优化器配置参数
+            scheduler_cfgs (dict): 学习率调度器配置参数
+            grad_accumulate (int, optional): 梯度累积步数，用于增大等效batch_size，默认None
+            grad_clip (float, optional): 梯度裁剪阈值，用于防止梯度爆炸，默认None
         """
         self.mode = mode
         self.log_dir = log_dir
@@ -86,7 +107,24 @@ class Trainer():
         self.train_batch_num = len(self.train_dataloader)
 
         '''优化器'''
-        self.optimizer = self.accelerator.prepare(OPTIMIZERS.build_from_cfg(optimizer_cfgs, params=self.model.parameters()))
+        # 支持 backbone 单独设置学习率倍率 (如 DETR 中 backbone_lr_mult=0.1)
+        optimizer_cfgs_copy = optimizer_cfgs.copy()
+        backbone_lr_mult = optimizer_cfgs_copy.pop('backbone_lr_mult', None)
+        if backbone_lr_mult is not None:
+            backbone_params = []
+            other_params = []
+            for name, param in self.model.named_parameters():
+                if 'backbone' in name and param.requires_grad:
+                    backbone_params.append(param)
+                elif param.requires_grad:
+                    other_params.append(param)
+            params = [
+                {'params': backbone_params, 'lr': optimizer_cfgs_copy['lr'] * backbone_lr_mult},
+                {'params': other_params, 'lr': optimizer_cfgs_copy['lr']},
+            ]
+        else:
+            params = self.model.parameters()
+        self.optimizer = self.accelerator.prepare(OPTIMIZERS.build_from_cfg(optimizer_cfgs_copy, params=params))
         # 学习率衰减策略(+warmup)
         base_scheduler = SCHEDULERS.build_from_cfg(scheduler_cfgs["base_schedulers_cfgs"], optimizer=self.optimizer)
         self.scheduler = self.accelerator.prepare(
@@ -114,14 +152,23 @@ class Trainer():
 
     # Hook 机制 ==========
     def register_hook(self, event: str, func):
-        """注册hook
+        """注册Hook回调函数
+
+        Args:
+            event (str): Hook事件名称，如 'before_batch', 'after_epoch' 等
+            func (callable): Hook回调函数，接收 runner 实例作为参数
         """
         if event not in self._hooks:
             self._hooks[event] = []
         self._hooks[event].append(func)
 
     def call_hooks(self, event: str, *args, **kwargs):
-        """调用一个hook
+        """调用指定事件的所有已注册Hook
+
+        Args:
+            event (str): Hook事件名称
+            *args: 传递给Hook的位置参数
+            **kwargs: 传递给Hook的关键字参数
         """
         for hook in self._hooks.get(event, []):
             hook(*args, **kwargs)
@@ -129,9 +176,13 @@ class Trainer():
 
 
     def fit_batch(self, batch_datas):
-        """一个batch的训练流程(前向+反向)
-            Args:
-                batch_datas: dataloader传来的数据+标签
+        """执行单个batch的前向传播和反向传播
+
+        Args:
+            batch_datas: DataLoader传来的数据与标签列表
+
+        Returns:
+            dict: 包含各损失项的字典
         """
         self.call_hooks("before_batch", runner=self)
 
@@ -169,8 +220,10 @@ class Trainer():
 
 
     def fit_epoch(self):
-        '''一个epoch的训练
-        '''
+        """执行单个epoch的训练流程
+
+        包含：Hook调用、模型训练、数据迭代、参数更新、学习率调度
+        """
         self.call_hooks("before_epoch", runner=self)
         self.model.train()
         # 固定每个epoch的随机性:
@@ -187,8 +240,10 @@ class Trainer():
 
 
     def fit(self):
-        '''所有epoch的训练流程(训练+验证)
-        '''
+        """执行完整的训练流程（包含多个epoch的训练和验证）
+
+        遍历所有epoch进行训练，每个epoch结束后执行Hook回调
+        """
         self.call_hooks("before_fit", runner=self)
 
         for epoch in range(self.start_epoch, self.epoch+1):

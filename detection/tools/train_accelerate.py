@@ -13,8 +13,11 @@ if __name__ == '__main__':
     # 使用动态导入模块导入参数文件
     cargs = dynamic_import_class(config_path, get_class=False)
     # 初始化runner
+    grad_clip = getattr(cargs, 'grad_clip', None)
+    grad_accumulate = getattr(cargs, 'grad_accumulate', None)
     runner = Trainer(cargs.mode, cargs.epoch, cargs.seed, cargs.log_dir, cargs.log_interval, cargs.eval_interval, cargs.resume, 
-                     cargs.model_cfgs, cargs.dataset_cfgs, cargs.optimizer_cfgs, cargs.scheduler_cfgs)
+                     cargs.model_cfgs, cargs.dataset_cfgs, cargs.optimizer_cfgs, cargs.scheduler_cfgs,
+                     grad_accumulate=grad_accumulate, grad_clip=grad_clip)
     # 注册 Hook
     # 任务特定的评估pipeline
     eval_pipeline = EVALPIPELINES.build_from_cfg(cargs.eval_pipeline_cfgs)

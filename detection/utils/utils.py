@@ -9,8 +9,8 @@ import math
 import json
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-
-
+import matplotlib.patches as patches
+import colorsys
 
 
 
@@ -92,46 +92,106 @@ def map_boxes_to_origin_size(boxes, orig_size, target_size):
     return boxes
 
 
-def OpenCVDrawBox(image, boxes, classes, scores, save_vis_path, image2color, class_names, resize_size, show_text=True):
-    '''plt画框
-        Args:
-            :param image:         原始图像(Image格式)
-            :param boxes:         网络预测的box坐标
-            :param classes:       网络预测的box类别
-            :param scores:        网络预测的box置信度
-            :param save_res_path: 可视化结果保存路径
 
-        Returns:
-            None
+
+
+def OpenCVDrawBox(image, boxes, classes, scores, save_vis_path, image2color, class_names, show_text=True, resized_size=None):
+    '''
+    基于 Matplotlib 在原图上绘制检测框（自动根据图像尺寸调整线条粗细和文本大小）
+    Args:
+        image:         原始图像 (numpy.ndarray, HxWx3, 可以是 RGB 或 BGR，函数内部会统一为 RGB)
+        boxes:         检测框坐标 [N,4] (x1,y1,x2,y2) 浮点数或整数，坐标基于缩放后图像尺寸
+        classes:       类别索引
+        scores:        置信度
+        save_vis_path: 保存路径，为 None 时仅返回图像
+        image2color:   类别到颜色映射 {name: [R,G,B] 0~1}  (RGB)
+        class_names:   类别索引 -> 名称列表
+        show_text:     是否显示文本
+        resized_size:  可选，模型输入缩放后的尺寸 (width, height)。若提供，则将 boxes 从该尺寸映射回原始图像尺寸
+    Returns:
+        绘制后的图像 (numpy.ndarray, RGB 格式)
     '''
     H, W = image.shape[:2]
-    max_len = max(W, H)
-    w = int(W * resize_size[0] / max_len)
-    h = int(H * resize_size[1] / max_len)
-    boxes[:, [0,2]] *= w / W
-    boxes[:, [1,3]] *= h / H
 
-    image = cv2.resize(image, (w, h), interpolation=cv2.INTER_AREA)
-    # 框的粗细
-    thickness = max(1, int(image.shape[0] * 0.003))
+    # 如果提供了缩放后的尺寸，则将 boxes 映射到原始图像坐标
+    if resized_size is not None:
+        resized_w, resized_h = resized_size
+        scale_x = W / resized_w
+        scale_y = H / resized_h
+        boxes = boxes.copy().astype(float)
+        boxes[:, [0, 2]] *= scale_x
+        boxes[:, [1, 3]] *= scale_y
+
+    # 自适应参数（基于原始图像尺寸）
+    img_diag = (H ** 2 + W ** 2) ** 0.5
+    linewidth = max(0.5, min(2, img_diag * 0.002))  # 框线粗细（点）
+    fontsize = max(6, min(12, H / 50.0))           # 字体大小（点）
+
+    # 创建图形，去除白边
+    dpi = 100
+    fig, ax = plt.subplots(figsize=(W / dpi, H / dpi), dpi=dpi)
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    ax.imshow(image)  # 期望 RGB
+    ax.axis('off')
+
+    # 辅助函数：根据边框颜色生成更亮的相似文本颜色
+    def get_lighter_color(rgb_color, factor=1.5, min_v=0.6):
+        h, l, s = colorsys.rgb_to_hls(rgb_color[0], rgb_color[1], rgb_color[2])
+        l = min(1.0, l * factor)
+        l = max(min_v, l)
+        r, g, b = colorsys.hls_to_rgb(h, l, s)
+        return (r, g, b)
+
+    # 绘制所有检测框
     for box, cls, score in zip(boxes, classes, scores):
-        # if class_names[cls] not in  ['pedestrian', 'people', 'person']:continue
-        x0, y0, x1, y1 = round(box[0]), round(box[1]), round(box[2]), round(box[3])
-        color = np.array(image2color[class_names[cls]])
-        color = tuple([int(c*255) for c in color])
-        # color = (0,0,255)
-        # text = 'target_1'
-        # text = '{} {:.2f}'.format(text, score)
-        text = '{} {:.2f}'.format(class_names[cls], score)
-        # obj的框
-        cv2.rectangle(image, (x0, y0), (x1, y1), color, thickness=thickness)
-        # 文本的框
+        x0, y0, x1, y1 = box[0], box[1], box[2], box[3]
+        # 确保坐标在图像内
+        x0 = max(0, min(x0, W))
+        y0 = max(0, min(y0, H))
+        x1 = max(0, min(x1, W))
+        y1 = max(0, min(y1, H))
+        width = x1 - x0
+        height = y1 - y0
+        if width <= 0 or height <= 0:
+            continue
+
+        color = np.array(image2color[class_names[cls]])  # RGB 0~1
+        color = tuple(color)
+
+        # 矩形框（无填充）
+        rect = patches.Rectangle((x0, y0), width, height,
+                                 linewidth=linewidth, edgecolor=color, facecolor='none')
+        ax.add_patch(rect)
+
         if show_text:
-            cv2.rectangle(image, (x0-1, y0-30), (x0+len(text)*12, y0), color, thickness=-1)
-            # 文本
-            cv2.putText(image, text, (x0, y0-6), cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.7, color=(255,255,255), thickness=2)
-    # 保存
-    if save_vis_path!=None:
-        return image
-    image = cv2.resize(image, (W, H))
-    return image
+            text_str = f'{class_names[cls]} {score:.2f}'
+            text_x = x0
+            text_y = y0 - 1   # 默认显示在框上方
+
+            if text_y < fontsize:
+                text_y = y1 + fontsize
+
+            text_color = get_lighter_color(color, factor=1.3, min_v=0.7)
+
+            bbox_props = dict(
+                facecolor=(0, 0, 0, 0.6),
+                edgecolor='none',
+                pad=1.5
+            )
+
+            ax.text(text_x, text_y, text_str,
+                    fontsize=fontsize,
+                    color=text_color,
+                    bbox=bbox_props,
+                    verticalalignment='top', horizontalalignment='left')
+
+    # 将画布内容转为 numpy 数组（RGBA -> RGB）
+    fig.canvas.draw()
+    buf = fig.canvas.buffer_rgba()
+    img_plot = np.asarray(buf)[:, :, :3]
+    plt.close(fig)
+
+    if save_vis_path is not None:
+        plt.imsave(save_vis_path, img_plot)
+
+    return img_plot

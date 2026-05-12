@@ -1,4 +1,8 @@
 # coding=utf-8
+"""
+HeltonX 训练框架 - PyTorch 原生 DDP 实现
+提供完整的训练、验证和推理流程支持
+"""
 import os
 import json
 import torch
@@ -18,24 +22,41 @@ from heltonx.utils.register import MODELS, DATASETS, OPTIMIZERS, SCHEDULERS, EVA
 
 
 
-class Trainer():
+class Trainer:
     """整合训练/验证/推理时的抽象流程"""
-    def __init__(self, mode, epoch, seed, log_dir, log_interval, eval_interval, resume_path, model_cfgs, dataset_cfgs, optimizer_cfgs, scheduler_cfgs, grad_accumulate=None, grad_clip=None):
-        """初始化各种模块
-            Args:
-                mode:               train, train_ddp
-                epoch:              训练多少轮
-                seed:               全局种子
-                log_dir:
-                log_interval:
-                eval_interval:
-                resume_path:
-                model_cfgs:         和网络模型有关的配置参数
-                dataset_cfgs:       和数据集有关的配置参数
-                optimizer_cfgs:     和优化器有关的配置参数
-                scheduler_cfgs:     和学习率衰减策略有关的配置参数
-                grad_accumulate:    是否开启梯度累加策略(不额外增加显存占用, 增大bs)
-                grad_clip:          梯度裁剪, 训练LLM时通常使用, 避免梯度爆炸
+
+    def __init__(
+        self,
+        mode,
+        epoch,
+        seed,
+        log_dir,
+        log_interval,
+        eval_interval,
+        resume_path,
+        model_cfgs,
+        dataset_cfgs,
+        optimizer_cfgs,
+        scheduler_cfgs,
+        grad_accumulate=None,
+        grad_clip=None
+    ):
+        """初始化训练器模块
+
+        Args:
+            mode (str): 训练模式，可选值：'train'（单卡训练）、'train_ddp'（多卡DDP训练）
+            epoch (int): 训练轮数
+            seed (int): 全局随机种子，用于复现实验结果
+            log_dir (str): 日志文件保存目录
+            log_interval (int): 日志打印间隔，每隔多少个iteration打印一次
+            eval_interval (int): 评估间隔，每隔多少个epoch进行一次评估
+            resume_path (str): 断点恢复路径，若为None则从头开始训练
+            model_cfgs (dict): 网络模型配置参数，包含模型类型和初始化参数
+            dataset_cfgs (dict): 数据集配置参数，包含数据集路径、batch_size等
+            optimizer_cfgs (dict): 优化器配置参数
+            scheduler_cfgs (dict): 学习率调度器配置参数
+            grad_accumulate (int, optional): 梯度累积步数，用于增大等效batch_size，默认None
+            grad_clip (float, optional): 梯度裁剪阈值，用于防止梯度爆炸，默认None
         """
         self.mode = mode
         self.log_dir = log_dir
@@ -126,14 +147,23 @@ class Trainer():
 
     # Hook 机制 ==========
     def register_hook(self, event: str, func):
-        """注册hook
+        """注册Hook回调函数
+
+        Args:
+            event (str): Hook事件名称，如 'before_batch', 'after_epoch' 等
+            func (callable): Hook回调函数，接收 runner 实例作为参数
         """
         if event not in self._hooks:
             self._hooks[event] = []
         self._hooks[event].append(func)
 
     def call_hooks(self, event: str, *args, **kwargs):
-        """调用一个hook
+        """调用指定事件的所有已注册Hook
+
+        Args:
+            event (str): Hook事件名称
+            *args: 传递给Hook的位置参数
+            **kwargs: 传递给Hook的关键字参数
         """
         for hook in self._hooks.get(event, []):
             hook(*args, **kwargs)
@@ -143,9 +173,13 @@ class Trainer():
 
 
     def fit_batch(self, batch_datas):
-        """一个batch的训练流程(前向+反向)
-            Args:
-                batch_datas: dataloader传来的数据+标签
+        """执行单个batch的前向传播和反向传播
+
+        Args:
+            batch_datas: DataLoader传来的数据与标签列表
+
+        Returns:
+            dict: 包含各损失项的字典
         """
         self.call_hooks("before_batch", runner=self)
 
@@ -165,7 +199,13 @@ class Trainer():
         self.losses['total_loss'].backward()
         '''梯度更新'''
         # 启用梯度累加时迭代的步数达到累加的步数时才进行梯度更新, 这样等效于增大了bs
-        if self.grad_accumulate is None or (self.cur_step+1) % self.grad_accumulate==0:
+        # 注意：cur_step 从 0 开始，第一步 (cur_step+1) % grad_accumulate == 1 % grad_accumulate
+        # 当 grad_accumulate=1 时每步都更新；否则每累计 grad_accumulate 步更新一次
+        should_update = (self.grad_accumulate is None or 
+                         self.grad_accumulate == 1 or 
+                         (self.cur_step + 1) % self.grad_accumulate == 0 or
+                         self.cur_step + 1 == self.train_batch_num)  # 最后一个 batch 必须更新
+        if should_update:
             # 梯度裁剪 LLM 训练中使用, 保证训练的稳定性
             if self.grad_clip:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
@@ -184,8 +224,10 @@ class Trainer():
 
 
     def fit_epoch(self):
-        '''一个epoch的训练
-        '''
+        """执行单个epoch的训练流程
+
+        包含：Hook调用、模型训练、数据迭代、参数更新、学习率调度
+        """
         self.call_hooks("before_epoch", runner=self)
 
         self.model.train()
@@ -196,15 +238,17 @@ class Trainer():
             '''一个batch的训练'''
             self.fit_batch(batch_datas)
             # 一个batch结束后更新学习率
-            self.scheduler.step(epoch=self.cur_epoch, batch=step) 
+            self.scheduler.step(epoch=self.cur_epoch, batch=step)
 
         self.call_hooks("after_epoch", runner=self)
 
 
 
     def fit(self):
-        '''所有epoch的训练流程(训练+验证)
-        '''
+        """执行完整的训练流程（包含多个epoch的训练和验证）
+
+        遍历所有epoch进行训练，每个epoch结束后执行Hook回调
+        """
         self.call_hooks("before_fit", runner=self)
 
         for epoch in range(self.start_epoch, self.epoch+1):

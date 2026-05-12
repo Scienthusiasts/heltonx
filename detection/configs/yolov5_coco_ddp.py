@@ -35,7 +35,7 @@ epoch = 12 * 4
 bs = 8
 lr = 1e-3
 warmup_decay = 1e-2
-warmup_epochs = 2
+warmup_epochs = 1
 lr_decay = 1e-1
 load_ckpt = None
 log_interval = 50
@@ -54,6 +54,13 @@ model_cfgs = dict(
     nms_score_thr=0.01,
     nms_iou_thr=0.3, 
     nms_agnostic=False,
+    bbox_coder=dict(
+        type="YOLOv5BBoxCoder",
+        img_size=img_size,
+        anchors=anchors,
+        anchors_mask=anchors_mask,
+        nc=nc,
+    ),
     backbone=dict(
         type="YOLOv5CSPDarknet",
         phi=phi,
@@ -74,6 +81,13 @@ model_cfgs = dict(
         anchors_mask=anchors_mask,
         label_smoothing=0,
         layers_num=3,
+        bbox_coder=dict(
+            type="YOLOv5BBoxCoder",
+            img_size=img_size,
+            anchors=anchors,
+            anchors_mask=anchors_mask,
+            nc=nc,
+        ),
         cls_loss=dict(
             # type="FocalLoss",
             # reduction="mean",
@@ -84,7 +98,7 @@ model_cfgs = dict(
         ),
         box_loss=dict(
             type="IoULoss",
-            iou_type='giou',
+            iou_type='ciou',
             xywh=True,
             reduction="none",
         ),

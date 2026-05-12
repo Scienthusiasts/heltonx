@@ -9,16 +9,30 @@ from heltonx.utils.ckpts_utils import load_state_dict_with_prefix
 from detection.utils.fcos_utils import *
 from detection.losses import *
 from detection.utils.nms import NMS
-from detection.utils.yolov5_utils import *
+from detection.utils.yolov5_utils import non_max_suppression, vis_YOLOv5_heatmap
 
 
 
 @MODELS.register
 class YOLOv5(nn.Module):
-    '''完整YOLOv5网络架构
-    '''
-    def __init__(self, img_size, backbone:nn.Module, fpn:nn.Module, heads:nn.Module, anchors, anchors_mask, nc, nms_score_thr, nms_iou_thr, nms_agnostic, load_ckpt):
-        super(YOLOv5, self).__init__()
+    """完整YOLOv5网络架构
+
+    Args:
+        img_size (List[int]): 输入图像尺寸，如 [640, 640]
+        backbone (nn.Module): 骨干网络
+        fpn (nn.Module): FPN 特征金字塔网络
+        heads (nn.Module): YOLOv5 检测头
+        anchors (List[List[int]]): 先验框列表，如 [[10, 13], [16, 30], ...]
+        anchors_mask (List[List[int]]): 先验框掩码
+        nc (int): 类别数量
+        nms_score_thr (float): NMS 置信度阈值
+        nms_iou_thr (float): NMS IOU 阈值
+        nms_agnostic (bool): NMS 是否类别无关
+        load_ckpt (str): 预训练权重路径
+        bbox_coder (nn.Module): bbox 编解码器
+    """
+    def __init__(self, img_size, backbone, fpn, heads, anchors, anchors_mask, nc, nms_score_thr, nms_iou_thr, nms_agnostic, load_ckpt, bbox_coder):
+        super().__init__()
         self.img_size = img_size
         self.nms_score_thr = nms_score_thr
         self.nms_iou_thr = nms_iou_thr
@@ -28,12 +42,13 @@ class YOLOv5(nn.Module):
         self.anchors_mask = anchors_mask
         self.nms_agnostic = nms_agnostic
         self.nms = NMS()
+        self.bbox_coder = bbox_coder
         '''网络基本组件'''
         self.backbone = backbone
         self.fpn = fpn
         self.heads = heads
         # 是否导入预训练权重
-        if load_ckpt: 
+        if load_ckpt:
             self = load_state_dict_with_prefix(self, load_ckpt)
 
 
@@ -66,30 +81,28 @@ class YOLOv5(nn.Module):
 
 
     def infer(self, image:torch.tensor, agnostic=False, vis_heatmap=False, save_vis_path=None):
-        '''推理一张图/一帧
-            Args:
-                image:  读取的图像 [1, 3, H, W]
-            Returns:
-                boxes:       网络回归的box坐标    [obj_nums, 4=(x0, y0, x1, y1)]
-                box_scores:  网络预测的box置信度  [obj_nums]
-                box_classes: 网络预测的box类别    [obj_nums]
-        '''
+        """推理一张图/一帧
+
+        Args:
+            image (Tensor): 读取的图像 [1, 3, H, W]
+            agnostic (bool): NMS 是否类别无关
+            vis_heatmap (bool): 是否可视化 heatmap
+            save_vis_path (str): 可视化结果保存路径
+
+        Returns:
+            boxes (ndarray): 网络回归的box坐标 [obj_nums, 4=(x0, y0, x1, y1)]
+            box_scores (ndarray): 网络预测的box置信度 [obj_nums]
+            box_classes (ndarray): 网络预测的box类别 [obj_nums]
+        """
         img_size = image.shape[2:]
         H, W = image.shape[2:]
         with torch.no_grad():
             '''网络推理得到最原始的未解码未nms的结果'''
-            # p3, p4, p5
             predicts = self.forward(image, return_loss=False)
-            '''利用Head的预测结果对RPN proposals进行微调+解码(解码到原图尺寸下的绝对坐标xyxy) 获得预测框'''
-            # torch.Size([1, 1200, 85])
-            # torch.Size([1, 4800, 85])
-            # torch.Size([1, 19200, 85])
-            # decode_predicts 是归一化的cxcywh
-            decode_predicts = inferDecodeBox(predicts, img_size, self.nc, self.anchors, self.anchors_mask)
-            # torch.cat(decode_predicts, 1) : torch.Size([1, 25200, 85])
+            '''利用bbox_coder对预测结果进行解码(解码到归一化的cxcywh)'''
+            decode_predicts = self.bbox_coder.decode(predicts)
             decode_predicts = torch.cat(decode_predicts, 1)
             '''计算nms, 同时将归一化的cxcywh->归一化的xywh'''
-            # decode_predicts = self.nms(decode_predicts, self.nms_score_thr, self.nms_iou_thr, self.nms_agnostic)[0]
             decode_predicts = non_max_suppression(decode_predicts, img_size, conf_thres=self.nms_score_thr, nms_thres=self.nms_iou_thr, agnostic=agnostic)
             # 图像里没预测出目标的情况:
             if len(decode_predicts) == 0 : return [],[],[]
