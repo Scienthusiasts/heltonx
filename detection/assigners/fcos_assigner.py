@@ -188,24 +188,29 @@ class FCOSAssigner(nn.Module):
         bs = len(gt_boxes_list)
         assert bs == len(labels_list), "gt_boxes_list 与 labels_list 长度不一致"
 
-        # 当前 batch 中最大 GT 数
-        max_box_nums = max([b.shape[0] for b in gt_boxes_list])
+        # 当前 batch 中最大 GT 数（至少为1，避免全batch无GT时后续计算出错）
+        max_box_nums = max([b.reshape(-1, 4).shape[0] if b.dim() >= 1 else 0 for b in gt_boxes_list] + [1])
 
         padded_boxes = []
         padded_labels = []
         masks = []
 
         for i in range(bs):
-            n = gt_boxes_list[i].shape[0]
+            # 确保空bbox至少是2D [0, 4]，避免1D [0] 导致赋值时维度不匹配
+            cur_boxes = gt_boxes_list[i]
+            if cur_boxes.dim() == 1:
+                cur_boxes = cur_boxes.reshape(0, 4)
+            n = cur_boxes.shape[0]
             # 初始化 padding
-            pad_boxes = torch.full((max_box_nums, 4), pad_value, dtype=gt_boxes_list[i].dtype, device=gt_boxes_list[i].device)
+            pad_boxes = torch.full((max_box_nums, 4), pad_value, dtype=cur_boxes.dtype, device=cur_boxes.device)
             pad_cls   = torch.full((max_box_nums,), pad_value, dtype=labels_list[i].dtype, device=labels_list[i].device)
-            mask      = torch.zeros((max_box_nums,), dtype=torch.bool, device=gt_boxes_list[i].device)
+            mask      = torch.zeros((max_box_nums,), dtype=torch.bool, device=cur_boxes.device)
 
             # 填充前 n 个为真实值
-            pad_boxes[:n] = gt_boxes_list[i]
-            pad_cls[:n]   = labels_list[i]
-            mask[:n]      = True
+            if n > 0:
+                pad_boxes[:n] = cur_boxes
+                pad_cls[:n]   = labels_list[i]
+                mask[:n]      = True
 
             padded_boxes.append(pad_boxes)
             padded_labels.append(pad_cls)

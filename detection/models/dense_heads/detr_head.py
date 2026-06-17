@@ -129,7 +129,7 @@ class DETRHead(nn.Module):
         bs = cls_preds.shape[0]
         num_queries = cls_preds.shape[1]
 
-        # 1. 匈牙利匹配
+        # 1. 匈牙利匹配（与官方 DETR 一致：所有代价在归一化空间计算）
         indices = self.assigner(
             cls_preds.detach(), box_preds.detach(),
             batch_labels, batch_bboxes
@@ -159,8 +159,11 @@ class DETRHead(nn.Module):
                 matched_masks[b, indices[b][0]] = True
 
         # 5. 各子 loss（乘以权重）
+        # 分类: reduction='mean' over B*num_queries（与官方 DETR 一致）
         cls_loss = self.cls_loss_weight * self.cls_loss(cls_preds, cls_targets)
+        # L1: 归一化空间，除以 num_boxes（与官方 DETR 一致）
         l1_loss = self.l1_loss_weight * self.l1_loss(box_preds, box_targets, matched_masks, num_boxes)
+        # GIoU: 归一化空间（GIoU 尺度不变，与官方 DETR 一致）
         giou_loss = self.giou_loss_weight * self.giou_loss(box_preds, box_targets, matched_masks, num_boxes)
 
         return dict(
@@ -172,11 +175,11 @@ class DETRHead(nn.Module):
     def loss(self, cls_preds, box_preds, hs_all, batch_labels, batch_bboxes):
         """计算 DETR 总损失（含 Auxiliary Loss）
 
-        与 MMDetection 官方实现一致：
+        与官方 DETR 实现一致：
+        - 所有代价/损失在归一化空间计算
         - 每层 decoder 独立做匈牙利匹配
         - 辅助损失与主层使用相同权重（不取平均）
         - 最后一层作为主损失（loss_cls / loss_bbox / loss_iou）
-        - 前面各层作为辅助损失（d0 ~ d4）
         - DDP 训练时 num_boxes 做 all_reduce
 
         Args:
@@ -191,7 +194,7 @@ class DETRHead(nn.Module):
         """
         num_boxes = self._get_num_boxes(batch_labels, cls_preds.device)
 
-        # 最终层损失（主损失，键名与 MMDetection 一致）
+        # 最终层损失（主损失）
         losses = self._compute_single_loss(cls_preds, box_preds, batch_labels, batch_bboxes, num_boxes)
         loss_dict = {
             'loss_cls': losses['cls_loss'],
@@ -200,7 +203,6 @@ class DETRHead(nn.Module):
         }
 
         # Auxiliary Loss: 前 num_decoder_layers-1 层作为辅助损失
-        # MMDet 命名: d0 ~ d4 对应前 5 层，最后一层无主损失前缀
         for i in range(self.num_decoder_layers - 1):
             aux_cls = self.cls_head(hs_all[i])
             aux_box = self.reg_head(hs_all[i]).sigmoid()

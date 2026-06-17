@@ -44,7 +44,9 @@ class WarmupScheduler:
             optimizer: 已经实例化的优化器
             batch_num (int): 一个epoch包含的batch数量，用于计算warmup步数
             warmup_epochs (int, optional): warmup阶段的epoch数，默认5
-            min_lr (float, optional): warmup起始学习率，默认0.0
+            min_lr (float, optional): warmup起始学习率（全局），默认0.0。
+                当optimizer有多个param_groups时（如backbone_lr_mult），
+                各组的起始lr按与最大lr的比例缩放，保持倍率关系一致。
             last_epoch (int, optional): 上次训练结束时的epoch数，用于断点恢复，默认0
         """
         self.optimizer = optimizer
@@ -56,9 +58,17 @@ class WarmupScheduler:
         # base_scheduler 的初始 lr 作为 warmup 的目标 lr
         self.target_lrs = [group['lr'] for group in optimizer.param_groups]
 
-        # warmup 起始 lr 设置为 min_lr
-        for group in optimizer.param_groups:
-            group['lr'] = self.min_lr
+        # 各 param_group 的 warmup 起始 lr，按与最大 target_lr 的比例缩放 min_lr
+        # 确保 backbone_lr_mult 等倍率关系在 warmup 期间保持一致
+        max_target_lr = max(self.target_lrs)
+        if max_target_lr > 0:
+            self.min_lrs = [min_lr * (tl / max_target_lr) for tl in self.target_lrs]
+        else:
+            self.min_lrs = [min_lr] * len(self.target_lrs)
+
+        # warmup 起始 lr 设置为各组对应的 min_lr
+        for idx, group in enumerate(optimizer.param_groups):
+            group['lr'] = self.min_lrs[idx]
         self.last_epoch = last_epoch
 
     def get_warmup_lr(self, batch):
@@ -70,13 +80,15 @@ class WarmupScheduler:
         Returns:
             list: 各参数组的学习率列表
         """
-        if self.last_epoch < self.warmup_epochs:
-            # 0-based warmup，Epoch 1 lr = min_lr
-            warmup_factor = (self.last_epoch * self.batch_num + batch) / (self.warmup_epochs * self.batch_num)
-            return [self.min_lr + (target_lr - self.min_lr) * warmup_factor
-                    for target_lr in self.target_lrs]
-        else:
-            return self.base_scheduler.get_last_lr()
+        # warmup阶段：从min_lr线性增长到target_lr
+        # last_epoch是0-indexed: epoch1→0, epoch2→1, ...
+        # 当last_epoch < warmup_epochs时处于warmup阶段
+        # 使用1-based步数，使lr从第一个batch就开始增长
+        current_step = self.last_epoch * self.batch_num + batch + 1
+        total_steps = self.warmup_epochs * self.batch_num
+        warmup_factor = min(current_step / total_steps, 1.0)
+        return [min_lr + (target_lr - min_lr) * warmup_factor
+                for min_lr, target_lr in zip(self.min_lrs, self.target_lrs)]
 
     def step(self, batch, epoch):
         """执行一步学习率调度
@@ -85,17 +97,20 @@ class WarmupScheduler:
             batch (int): 当前batch在epoch中的索引
             epoch (int): 当前epoch数
         """
+        # 新epoch开始时更新last_epoch（0-indexed: epoch1→0, epoch2→1, ...）
         if epoch - 1 > self.last_epoch:
-            self.last_epoch = epoch-1
+            self.last_epoch = epoch - 1
 
-        if self.last_epoch <= self.warmup_epochs:
-            # warmup 阶段手动更新 optimizer.lr(更新周期以batch为单位)
+        if self.last_epoch < self.warmup_epochs:
+            # warmup 阶段: 手动逐batch更新optimizer.lr
             lr_list = self.get_warmup_lr(batch)
             for idx, group in enumerate(self.optimizer.param_groups):
                 group['lr'] = lr_list[idx]
         else:
-            # 其余阶段更新 optimizer.lr(更新周期以epoch为单位)
-            self.base_scheduler.step(epoch - self.warmup_epochs)
+            # warmup结束: 使用base_scheduler按epoch更新lr
+            # 仅在每个epoch的第一个batch调用step，避免重复步进
+            if batch == 0:
+                self.base_scheduler.step()
 
 
     def get_last_lr(self):
@@ -112,6 +127,7 @@ class WarmupScheduler:
             'base_scheduler': self.base_scheduler.state_dict() if self.base_scheduler else None,
             'warmup_epochs': self.warmup_epochs,
             'min_lr': self.min_lr,
+            'min_lrs': self.min_lrs,
             'target_lrs': self.target_lrs,
             'last_epoch': self.last_epoch,
         }
@@ -123,6 +139,7 @@ class WarmupScheduler:
             self.base_scheduler.load_state_dict(state_dict['base_scheduler'])
         self.warmup_epochs = state_dict.get('warmup_epochs', self.warmup_epochs)
         self.min_lr = state_dict.get('min_lr', self.min_lr)
+        self.min_lrs = state_dict.get('min_lrs', self.min_lrs)
         self.target_lrs = state_dict.get('target_lrs', self.target_lrs)
         self.last_epoch = state_dict.get('last_epoch', self.last_epoch)
 
@@ -142,26 +159,27 @@ if __name__ == '__main__':
     import torch.nn as nn
     import torch.optim as optim
 
-    base_schedulers_cfgs = {
-        # "type": "StepLR",
-        # # 每间隔step_size个epoch更新学习率
-        # "step_size": 1,
-        # # 每次学习率变为原来的gamma倍
-        # "gamma": 0.5,
-        "type": "CosineAnnealingLR",
-        "T_max": 400 - 2,
-        "eta_min": 2e-5,
-    }
-    warmup_schedulers_cfgs = {
-        "type": "WarmupScheduler",
-        "min_lr": 2e-6,
-        "warmup_epochs": 2
-    }
+    epoch = 50
+    lr = 2e-4
+    warmup_decay = 1e-2
+    lr_decay = 1e-1
+    warmup_epochs = 1
+
+    base_schedulers_cfgs=dict(
+        type="CosineAnnealingLR",
+        T_max=epoch - warmup_epochs,
+        eta_min=lr * lr_decay,
+    )
+    warmup_schedulers_cfgs=dict(
+        type="WarmupScheduler",
+        min_lr=lr * warmup_decay,
+        warmup_epochs=warmup_epochs
+    )
     # 假设一个简单的模型
     model = nn.Linear(256, 2)
 
     # 优化器
-    optimizer = optim.SGD(model.parameters(), lr=2e-4)
+    optimizer = optim.SGD(model.parameters(), lr=lr)
     base_scheduler = SCHEDULERS.build_from_cfg(base_schedulers_cfgs, optimizer=optimizer)
     scheduler = SCHEDULERS.build_from_cfg(warmup_schedulers_cfgs, base_scheduler=base_scheduler, optimizer=optimizer, batch_num=100)
 
@@ -172,8 +190,8 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss()
 
 
-    for epoch in range(1, 400+1):  # 共训练 20 个 epoch
-        for iter in range(1563):
+    for epoch in range(1, epoch+1):  # 共训练 20 个 epoch
+        for iter in range(100):
             optimizer.zero_grad()
             outputs = model(x)
             loss = criterion(outputs, y)

@@ -248,6 +248,10 @@ class Trainer:
 
         for epoch in range(self.start_epoch, self.epoch+1):
             self.cur_epoch = epoch
+            '''更新 progressive loss 权重 (epoch 级别衰减)(yolo26用到)'''
+            model_unwrapped = self.accelerator.unwrap_model(self.model)
+            if hasattr(model_unwrapped, 'update_progressive'):
+                model_unwrapped.update_progressive(self.cur_epoch)
             '''一个epoch的训练'''
             self.fit_epoch()
 

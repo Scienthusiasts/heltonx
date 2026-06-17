@@ -386,8 +386,13 @@ class RunnerLogger:
         eta_hours = (self.total_iters - step - (epoch-1) * self.batch_num) * self.interval_time / 3600
         eta_mins = (eta_hours - int(eta_hours)) * 60
         '''记录'''
-        current_lr = optimizer.param_groups[0]['lr']
+        # 取最后一个param_group的lr作为主学习率（当有backbone_lr_mult时，param_groups[0]是backbone的低lr）
+        current_lr = optimizer.param_groups[-1]['lr']
         self.argsHistory.record('lr', current_lr)
+        # 如果有多组学习率（如backbone_lr_mult），分别记录
+        if len(optimizer.param_groups) > 1:
+            for pg_idx, pg in enumerate(optimizer.param_groups):
+                self.argsHistory.record(f'lr_group{pg_idx}', pg['lr'])
         # 记录所有损失:
         for loss_name, loss_value in losses.items():
             # 处理可能的非tensor类型
@@ -404,7 +409,12 @@ class RunnerLogger:
             return
         # 右对齐, 打印更美观
         batch_idx = '{:>{}}'.format(step, len(f"{self.batch_num}"))
-        log = ("Epoch(train) [%d][%s/%d] eta: %02d:%02d  lr: %8f  ") % (epoch, batch_idx, self.batch_num, int(eta_hours), int(eta_mins), current_lr)
+        # 构建lr显示：多组时都打印
+        if len(optimizer.param_groups) > 1:
+            lr_str = "  ".join([f"lr{idx}: {pg['lr']:.8f}" for idx, pg in enumerate(optimizer.param_groups)])
+        else:
+            lr_str = f"lr: {current_lr:.8f}"
+        log = ("Epoch(train) [%d][%s/%d] eta: %02d:%02d  %s  ") % (epoch, batch_idx, self.batch_num, int(eta_hours), int(eta_mins), lr_str)
         for loss_name, loss_value in losses.items():
             # 处理可能的非tensor类型
             if torch.is_tensor(loss_value):

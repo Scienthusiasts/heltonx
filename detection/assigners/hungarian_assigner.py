@@ -6,10 +6,11 @@ from detection.utils.detr_utils import hungarian_matcher
 
 @MODELS.register
 class HungarianAssigner(nn.Module):
-    """DETR 匈牙利匹配分配器
+    """DETR 匈牙利匹配分配器（与官方 DETR 一致）
 
     基于 DETR 的二分图匹配策略，将 query 与 GT 进行一对一匹配。
     代价矩阵 = cls_cost + L1_cost + GIoU_cost
+    所有代价均在归一化空间计算。
 
     Args:
         cls_cost_weight (float):   分类代价权重

@@ -20,12 +20,14 @@ class DETRBBoxCoder(nn.Module):
         self.img_h = img_size[0]
         self.img_w = img_size[1]
 
-    def decode(self, cls_preds, box_preds):
+    def decode(self, cls_preds, box_preds, img_h=None, img_w=None):
         """将预测结果解码为最终检测结果
 
         Args:
             cls_preds: [bs, num_queries, nc] 分类 logits
             box_preds: [bs, num_queries, 4]  归一化 cxcywh
+            img_h: 可选，模型实际输入高度。不传则用 config 的固定 img_size
+            img_w: 可选，模型实际输入宽度。不传则用 config 的固定 img_size
 
         Returns:
             list[Tensor]: 每个 batch 的检测结果 [num_det, 6=(x1, y1, x2, y2, score, class)]
@@ -35,8 +37,11 @@ class DETRBBoxCoder(nn.Module):
         cls_probs = cls_preds.softmax(-1)  # [bs, num_queries, nc]
         # 归一化 cxcywh -> xyxy
         box_xyxy = box_cxcywh_to_xyxy(box_preds)  # [bs, num_queries, 4]
-        # 映射到原图尺度
-        img_h, img_w = self.img_h, self.img_w
+        # 映射到实际输入尺寸（推理时必须与模型实际输入尺寸一致，而非config固定值）
+        if img_h is None:
+            img_h = self.img_h
+        if img_w is None:
+            img_w = self.img_w
         scale_f = torch.tensor([img_w, img_h, img_w, img_h],
                                device=box_xyxy.device, dtype=box_xyxy.dtype)
         box_xyxy = box_xyxy * scale_f

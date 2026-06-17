@@ -90,7 +90,7 @@ class DETR(nn.Module):
             transformer_output = self.fpn(backbone_feat)
             hs_all, _ = transformer_output
             cls_preds, box_preds = self.head(transformer_output)
-            # 计算损失 (匈牙利匹配 + focal/l1/giou 三项 + Auxiliary Loss)
+            # 计算损失（与官方 DETR 一致：所有代价/损失在归一化空间计算）
             loss = self.head.loss(cls_preds, box_preds, hs_all, batch_labels, batch_bboxes)
             return loss
         else:
@@ -114,8 +114,9 @@ class DETR(nn.Module):
         H, W = image.shape[2:]
         with torch.no_grad():
             cls_preds, box_preds = self.forward(image, return_loss=False)
-            # 解码: [bs, num_det, 6=(x1, y1, x2, y2, score, class)]
-            predictions = self.bbox_coder.decode(cls_preds, box_preds)
+            # 解码: 传入实际输入尺寸(H, W)，而非config固定的img_size
+            # 因为推理时test_transform没有PadIfNeeded，输入尺寸可能不等于config值
+            predictions = self.bbox_coder.decode(cls_preds, box_preds, img_h=H, img_w=W)
             # 取 batch[0]
             results = predictions[0]
 

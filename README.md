@@ -163,7 +163,7 @@ python ./xxx/tools/test.py
 | `2026/03/24` |                ✅ 支持 LDM（Latent Diffusion）                |
 | `2026/04/15` |                ✅ 支持 DiT ✅ 支持 Flow 生成范式                |
 | `2026/05/13` |                ✅ 支持 FasterRCNN-FPN ✅、DETR 检测器               |
-
+| `2026/06/17` |                ✅ 支持 YOLO26 检测器               |
 
 
 ## ➡️TODO

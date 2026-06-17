@@ -84,7 +84,7 @@ def generalized_box_iou(box1, box2):
 
 def hungarian_matcher(cls_preds, box_preds, gt_labels, gt_bboxes,
                       cls_cost_weight=1.0, l1_cost_weight=5.0, giou_cost_weight=2.0):
-    """匈牙利匹配
+    """匈牙利匹配（与官方 DETR 一致：所有代价在归一化空间计算）
 
     Args:
         cls_preds:      [bs, num_queries, nc+1] 分类 logits (包含背景类)
@@ -119,13 +119,15 @@ def hungarian_matcher(cls_preds, box_preds, gt_labels, gt_bboxes,
         # 分类代价: [num_queries, num_gt]
         cls_cost = -cls_probs[b * num_queries:(b + 1) * num_queries, gt_lbl]
 
-        # L1 代价: [num_queries, num_gt]
+        # L1 代价: [num_queries, num_gt] (归一化空间，与官方一致)
         bbox_pred = box_preds[b]  # [num_queries, 4]
-        gt_bbox_xyxy = box_cxcywh_to_xyxy(gt_bbox)  # [num_gt, 4]
         l1_cost = torch.cdist(bbox_pred, gt_bbox, p=1)
 
-        # GIoU 代价: [num_queries, num_gt]
-        giou_cost = -generalized_box_iou(box_cxcywh_to_xyxy(bbox_pred), gt_bbox_xyxy)
+        # GIoU 代价: [num_queries, num_gt] (归一化空间，与官方 DETR 一致)
+        gt_bbox_xyxy = box_cxcywh_to_xyxy(gt_bbox)  # [num_gt, 4]
+        giou_cost = -generalized_box_iou(
+            all_box_xyxy[b * num_queries:(b + 1) * num_queries],
+            gt_bbox_xyxy)
 
         # 总代价
         cost = cls_cost_weight * cls_cost + l1_cost_weight * l1_cost + giou_cost_weight * giou_cost

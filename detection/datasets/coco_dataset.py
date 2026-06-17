@@ -121,6 +121,9 @@ class COCODataset(BaseDetDataset):
             # 过滤掉稠密聚集的标注框
             if ann['iscrowd'] == 1: continue
             # if ann['ignore'] == 1: continue
+            # 过滤掉宽或高<=0的退化标注框(albumentations要求y_max>y_min, x_max>x_min)
+            bw, bh = ann['bbox'][2], ann['bbox'][3]
+            if bw <= 0 or bh <= 0: continue
             labelName = ann['category_id']
             labels.append(labelName)
             boxes.append(ann['bbox'])

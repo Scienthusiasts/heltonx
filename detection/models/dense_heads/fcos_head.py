@@ -136,14 +136,19 @@ class FCOSHead(nn.Module):
         cls_targets  = (torch.arange(0, self.nc, device=cls_targets.device)[None,:] == cls_targets).float()
         cls_loss = self.cls_loss(cls_preds, cls_targets).sum() / torch.sum(num_pos)
         '''centerness损失(正样本才计算)'''
-        # 计算BCE损失
-        cnt_loss = self.cnt_loss(cnt_preds[pos_mask], cnt_targets[pos_mask])
+        if pos_mask.sum() > 0:
+            cnt_loss = self.cnt_loss(cnt_preds[pos_mask], cnt_targets[pos_mask])
+        else:
+            cnt_loss = cnt_preds.sum() * 0
         '''回归损失(正样本才计算)'''
-        # 计算GIoU loss
-        reg_preds, reg_targets = reg_preds[pos_mask], reg_targets[pos_mask]
-        reg_preds[:, :2]*=-1
-        reg_targets[:, :2]*=-1
-        reg_loss = self.reg_loss(reg_preds, reg_targets)
+        if pos_mask.sum() > 0:
+            # 计算GIoU loss
+            reg_preds, reg_targets = reg_preds[pos_mask], reg_targets[pos_mask]
+            reg_preds[:, :2]*=-1
+            reg_targets[:, :2]*=-1
+            reg_loss = self.reg_loss(reg_preds, reg_targets)
+        else:
+            reg_loss = reg_preds.sum() * 0
         '''loss以字典形式回传'''
         loss = dict(
             cls_loss = cls_loss,

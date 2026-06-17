@@ -89,8 +89,13 @@ class YOLOv5Head(nn.Module):
         '''正负样本分配'''
         y_trues = [[] for _ in range(self.layers_num)]
         for bboxes, labels in zip(batch_bboxes, batch_labels):
+            # 当某张图片没有 GT 框时跳过坐标转换:
+            if bboxes.numel() == 0:
+                y_true = self.assigner.assgin_single(np.zeros((0, 4), np.float32), np.array([], np.int64), bbox_attrs=5+self.nc)
+                for i in range(self.layers_num):
+                    y_trues[i].append(y_true[i])
+                continue
             # coco格式转成YOLO格式(xywh -> norm(cxcywh)):
-            print(bboxes.shape)
             bboxes[:, 0] += bboxes[:, 2] / 2
             bboxes[:, 1] += bboxes[:, 3] / 2
             bboxes[:, [0, 2]] = bboxes[:, [0, 2]] / self.img_size[1]
