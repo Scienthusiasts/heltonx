@@ -4,6 +4,8 @@ import torch
 import os
 import types
 import sys
+import random
+import numpy as np
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 
@@ -326,6 +328,30 @@ def load_state_dict_with_prefix(model, load_ckpt, prefixes_to_try=['model.', 'mo
 
 
 
+def _save_rng_state():
+    """保存全局 RNG 状态 (python/numpy/torch/cuda), 用于断点续训时恢复随机性"""
+    rng_state = {
+        'python': random.getstate(),
+        'numpy': np.random.get_state(),
+        'torch': torch.random.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        rng_state['cuda'] = torch.cuda.get_rng_state_all()
+    return rng_state
+
+
+def _load_rng_state(rng_state):
+    """恢复全局 RNG 状态, 保证断点续训后的随机性与不中断完全一致"""
+    if 'python' in rng_state:
+        random.setstate(rng_state['python'])
+    if 'numpy' in rng_state:
+        np.random.set_state(rng_state['numpy'])
+    if 'torch' in rng_state:
+        torch.random.set_rng_state(rng_state['torch'])
+    if 'cuda' in rng_state and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(rng_state['cuda'])
+
+
 def save_ckpt(epoch, eval_interval, model, scheduler, log_dir, args_history, flag_metric_name=None):
     """保存模型权重和训练断点
 
@@ -346,7 +372,11 @@ def save_ckpt(epoch, eval_interval, model, scheduler, log_dir, args_history, fla
         'epoch': epoch,
         'model_state_dict': model.state_dict(),  # 未解包的 state_dict，用于 resume
         'optim_state_dict': scheduler.optimizer.state_dict(),
-        'sched_state_dict': scheduler.base_scheduler.state_dict()
+        'sched_state_dict': scheduler.base_scheduler.state_dict(),
+        # ★★★ 断点续训关键: 保存 WarmupScheduler 完整状态 (不仅是 base_scheduler)
+        'warmup_sched_state_dict': scheduler.state_dict() if hasattr(scheduler, 'state_dict') else None,
+        # ★★★ 断点续训关键: 保存 RNG 状态, 保证 resume 后随机性与不中断一致
+        'rng_state': _save_rng_state(),
     }
     torch.save(checkpoint_dict, os.path.join(log_dir, f"train_epoch{epoch}.pt"))
     # 保存 ckpt（已解包的）用于推理或微调
@@ -355,9 +385,13 @@ def save_ckpt(epoch, eval_interval, model, scheduler, log_dir, args_history, fla
     if flag_metric_name:
         flag_metric_list = args_history.args_history_dict[flag_metric_name]
         best_flag_metric_val = max(flag_metric_list)
-        # 找到所有最大值对应的 epoch（可能有多个相同最大值）
-        best_epochs = [i + 1 for i, v in enumerate(flag_metric_list) if v == best_flag_metric_val]
-        if epoch in [e * eval_interval for e in best_epochs]:
+        # ★★★ 修复: 用实际 epoch 号判断, 不依赖列表索引 (与 log_utils 同步修复)
+        n = len(flag_metric_list)
+        eval_start = epoch - (n - 1) * eval_interval
+        eval_epochs = [eval_start + i * eval_interval for i in range(n)]
+        # 找到所有最大值对应的实际 epoch (可能有多个相同最大值)
+        best_epochs = [eval_epochs[i] for i, v in enumerate(flag_metric_list) if v == best_flag_metric_val]
+        if epoch in best_epochs:
             torch.save(ckpt, os.path.join(log_dir, f'best_{flag_metric_name}.pt'))
 
 
@@ -366,11 +400,18 @@ def save_ckpt(epoch, eval_interval, model, scheduler, log_dir, args_history, fla
 def train_resume(resume, model, optimizer, scheduler, runner_logger, batch_nums):
     """恢复断点训练
 
+    ★★★ 断点续训保证:
+    1. 模型权重完全恢复
+    2. 优化器状态 (动量/方差等) 完全恢复
+    3. 学习率调度器状态完全恢复 (WarmupScheduler + base_scheduler)
+    4. RNG 状态 (python/numpy/torch/cuda) 完全恢复 → 后续 epoch 的随机性与不中断一致
+    5. DataLoader shuffle 通过 fit_epoch 中的 seed_everything(seed+epoch) 保证确定性
+
     Args:
         resume (str): 断点checkpoint文件路径
         model (nn.Module): 网络模型实例
         optimizer: 优化器实例
-        scheduler: 学习率调度器实例
+        scheduler: 学习率调度器实例 (WarmupScheduler)
         runner_logger: 运行日志记录器实例
         batch_nums (int): 每个epoch包含的batch数量
 
@@ -380,11 +421,31 @@ def train_resume(resume, model, optimizer, scheduler, runner_logger, batch_nums)
     ckpt = _load_ckpt_safe(resume, map_location="cpu")
     # resume后开始的epoch
     resume_epoch = ckpt['epoch'] + 1
-    scheduler.last_epoch = batch_nums * resume_epoch
-    # model.load_state_dict(ckpt['model_state_dict'])
+
+    # ★★★ 1. 恢复模型权重
     model = load_state_dict_with_prefix(model, load_ckpt=None, state_dict=ckpt['model_state_dict'])
+
+    # ★★★ 2. 恢复优化器状态 (动量/方差/step计数)
     optimizer.load_state_dict(ckpt['optim_state_dict'])
-    scheduler.base_scheduler.load_state_dict(ckpt['sched_state_dict'])
+
+    # ★★★ 3. 恢复调度器状态 (优先用完整的 WarmupScheduler 状态)
+    if 'warmup_sched_state_dict' in ckpt and ckpt['warmup_sched_state_dict'] is not None:
+        # 新格式: 保存了完整 WarmupScheduler 状态 (包含 base_scheduler + warmup 参数)
+        scheduler.load_state_dict(ckpt['warmup_sched_state_dict'])
+    else:
+        # 兼容旧格式: 只保存了 base_scheduler 状态
+        scheduler.base_scheduler.load_state_dict(ckpt['sched_state_dict'])
+        # 旧格式无法恢复 WarmupScheduler.last_epoch, 手动计算
+        scheduler.last_epoch = ckpt['epoch']  # 0-indexed: epoch_N → last_epoch = N-1+1 = N
+
+    # ★★★ 4. 恢复 RNG 状态 → 保证后续 epoch 的 dropout/augmentation/随机操作一致
+    if 'rng_state' in ckpt:
+        _load_rng_state(ckpt['rng_state'])
+    else:
+        # 兼容旧 checkpoint: 没有 RNG 状态, 警告用户
+        use_ddp = dist.is_initialized()
+        if not use_ddp or use_ddp and dist.get_rank() == 0:
+            print("⚠️  checkpoint 不含 RNG 状态, resume 后随机操作 (dropout/aug) 可能与不中断训练不一致")
 
     # 主节点才进行日志记录
     use_ddp = dist.is_initialized()

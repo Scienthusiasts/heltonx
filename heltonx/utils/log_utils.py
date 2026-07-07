@@ -450,17 +450,23 @@ class RunnerLogger:
         self.argsHistory.saveRecord()
 
         '''打印'''
-        # 找到最高准确率对应的epoch
+        # ★★★ 修复: 用实际 epoch 号计算 best_epoch, 不依赖列表索引
+        # 旧方式 index(max)+1 在 resume 后列表长度可能偏移, 导致 best_epoch 不准
         flag_metric_list = self.argsHistory.args_history_dict[flag_metric_name]
-        best_epoch = flag_metric_list.index(max(flag_metric_list)) + 1
         best_flag_metric_val = max(flag_metric_list)
+        n = len(flag_metric_list)
+        # 推算评估的 epoch 序列: 从 (epoch - (n-1)*eval_interval) 到 epoch, 步长 eval_interval
+        eval_start = epoch - (n - 1) * self.eval_interval
+        eval_epochs = [eval_start + i * self.eval_interval for i in range(n)]
+        best_idx = flag_metric_list.index(best_flag_metric_val)
+        best_epoch = eval_epochs[best_idx]
         # 打印指标
         self.logger.info('=' * 150)
         log = ("Epoch(valid) [%d]  ") % (epoch)
         for metric_name, metric_value in evaluations.items():
             loss_log = (metric_name+": %.5f  " % (metric_value))
             log += loss_log
-        log += (f"best_val_epoch: {best_epoch * self.eval_interval}  best_{flag_metric_name}: {best_flag_metric_val:.5f}")
+        log += (f"best_val_epoch: {best_epoch}  best_{flag_metric_name}: {best_flag_metric_val:.5f}")
         self.logger.info(log)
         self.logger.info('=' * 150)
 

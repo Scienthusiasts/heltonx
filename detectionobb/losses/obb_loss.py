@@ -220,6 +220,7 @@ class YOLO26OBBLoss(nn.Module):
         self.total_epochs = total_epochs
         self.updates = 0
         self.o2m_weight = o2m_init
+        self._anchor_cache = {}  # ★ 缓存 anchor/stride 张量, 避免每 batch 重复分配 GPU 内存
 
     def _compute_branch_loss(self, preds, batch_bboxes, batch_labels, assigner):
         """计算单个分支 (o2m 或 o2o) 的损失
@@ -417,9 +418,16 @@ class YOLO26OBBLoss(nn.Module):
         - anchor_points = grid 坐标 (0.5, 1.5, 2.5, ...) 不乘 stride
         - stride_tensor = 各层 stride 值
 
-        注意: 旧版返回像素空间坐标 (乘了 stride), 新版改为 grid 坐标
-        这是因为 dist2rbox/rbox2dist 需要 anchor 空间坐标
+        ★ 显存优化: 缓存 anchor 张量, 避免每 batch 重复创建 GPU 张量导致碎片化
         """
+        # 构建缓存 key: (h0,w0, h1,w1, h2,w2, device)
+        device = feats[0].device
+        shape_key = tuple((f.shape[2], f.shape[3]) for f in feats)
+        cache_key = (shape_key, device)
+
+        if cache_key in self._anchor_cache:
+            return self._anchor_cache[cache_key]
+
         anc, s = [], []
         for i, feat in enumerate(feats):
             _, _, h, w = feat.shape
@@ -431,4 +439,7 @@ class YOLO26OBBLoss(nn.Module):
             # ★ grid 坐标 (与官方一致: 不乘 stride)
             anc.append(torch.stack([gx + 0.5, gy + 0.5], dim=-1).reshape(-1, 2))
             s.append(torch.full((h * w, 1), stride, device=feat.device, dtype=torch.float32))
-        return torch.cat(anc, dim=0), torch.cat(s, dim=0)
+
+        result = (torch.cat(anc, dim=0), torch.cat(s, dim=0))
+        self._anchor_cache[cache_key] = result
+        return result

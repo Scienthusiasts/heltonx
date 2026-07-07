@@ -247,8 +247,8 @@ if __name__ == '__main__':
 '''
 python -m detectionobb.tools.dota_submit \
     --config detectionobb/configs/yolo26obb_dota_ddp.py \
-    --ckpt log/yolo26s_obb_dota_obb_train_ddp/2026-06-27-23-44-33_train_ddp/best_val_map.pt \
+    --ckpt log/yolo26l_obb_dota_obb_train_ddp/2026-07-01-10-42-24_train_ddp/best_val_map.pt \
     --test_dir /mnt/yht/data/DOTA-1.0-1.5_ss_size-1024_gap-200/test \
-    --output log/yolo26s_obb_dota_obb_train_ddp/2026-06-27-23-44-33_train_ddp/submit.zip \
+    --output log/yolo26l_obb_dota_obb_train_ddp/2026-07-01-10-42-24_train_ddp/submit.zip \
     --thr 0.05
 '''

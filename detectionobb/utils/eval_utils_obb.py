@@ -68,6 +68,7 @@ class OBBDetectionEvalPipeline:
         device = runner.device
         if model is None:
             model = runner.model
+        was_training = model.training
         model.eval()
 
         valid_dataloader = runner.valid_dataloader
@@ -77,47 +78,52 @@ class OBBDetectionEvalPipeline:
         all_preds = []
         all_gts = []
 
-        with torch.no_grad():
-            for batch_datas in tqdm(valid_dataloader, desc='OBB Evaluating'):
-                batch_datas = to_device(batch_datas, device, non_blocking=True)
-                imgs, rboxes_list, labels_list, img_ids, raw_sizes = batch_datas
+        try:
+            with torch.no_grad():
+                for batch_datas in tqdm(valid_dataloader, desc='OBB Evaluating'):
+                    batch_datas = to_device(batch_datas, device, non_blocking=True)
+                    imgs, rboxes_list, labels_list, img_ids, raw_sizes = batch_datas
 
-                bs = imgs.shape[0]
-                if bs == 1:
-                    results = [model.infer(imgs)]
-                else:
-                    results = model.infer(imgs)
-
-                for b in range(bs):
-                    boxes_np, scores_np, classes_np = results[b]
-
-                    if len(boxes_np) > 0:
-                        # ★★★ 关键修复: 存到 CPU/numpy 而非 GPU!
-                        #   原代码将所有 pred/gt 都存为 GPU tensor → 整个验证集在显存中累积 → OOM
-                        pred_boxes = regularize_rboxes(torch.from_numpy(boxes_np).float()).numpy()
+                    bs = imgs.shape[0]
+                    if bs == 1:
+                        results = [model.infer(imgs)]
                     else:
-                        pred_boxes = np.zeros((0, 5), dtype=np.float32)
+                        results = model.infer(imgs)
 
-                    pred_scores = scores_np if len(scores_np) > 0 else np.zeros(0, dtype=np.float32)
-                    pred_classes = classes_np.astype(np.int64) if len(classes_np) > 0 else np.zeros(0, dtype=np.int64)
+                    for b in range(bs):
+                        boxes_np, scores_np, classes_np = results[b]
 
-                    all_preds.append({
-                        'boxes': pred_boxes, 'scores': pred_scores, 'classes': pred_classes,
-                    })
+                        if len(boxes_np) > 0:
+                            # ★★★ 关键修复: 存到 CPU/numpy 而非 GPU!
+                            #   原代码将所有 pred/gt 都存为 GPU tensor → 整个验证集在显存中累积 → OOM
+                            pred_boxes = regularize_rboxes(torch.from_numpy(boxes_np).float()).numpy()
+                        else:
+                            pred_boxes = np.zeros((0, 5), dtype=np.float32)
 
-                    gt_rb = rboxes_list[b].cpu()
-                    gt_lb = labels_list[b].cpu()
-                    if len(gt_rb) > 0:
-                        gt_boxes = regularize_rboxes(gt_rb.float()).numpy()
-                    else:
-                        gt_boxes = np.zeros((0, 5), dtype=np.float32)
-                    gt_classes = gt_lb.long().numpy() if len(gt_lb) > 0 else np.zeros(0, dtype=np.int64)
+                        pred_scores = scores_np if len(scores_np) > 0 else np.zeros(0, dtype=np.float32)
+                        pred_classes = classes_np.astype(np.int64) if len(classes_np) > 0 else np.zeros(0, dtype=np.int64)
 
-                    all_gts.append({
-                        'boxes': gt_boxes, 'classes': gt_classes,
-                    })
+                        all_preds.append({
+                            'boxes': pred_boxes, 'scores': pred_scores, 'classes': pred_classes,
+                        })
 
-        results = compute_obb_map(all_preds, all_gts, nc, iou_thrs=[0.5])
+                        gt_rb = rboxes_list[b].cpu()
+                        gt_lb = labels_list[b].cpu()
+                        if len(gt_rb) > 0:
+                            gt_boxes = regularize_rboxes(gt_rb.float()).numpy()
+                        else:
+                            gt_boxes = np.zeros((0, 5), dtype=np.float32)
+                        gt_classes = gt_lb.long().numpy() if len(gt_lb) > 0 else np.zeros(0, dtype=np.int64)
+
+                        all_gts.append({
+                            'boxes': gt_boxes, 'classes': gt_classes,
+                        })
+
+            results = compute_obb_map(all_preds, all_gts, nc, iou_thrs=[0.5])
+        finally:
+            # ★★★ 关键修复: 评估结束后恢复训练模式, 确保 BN running stats 正常更新
+            if was_training:
+                model.train()
 
         # ★ 先提取结果, 再清理 GPU 缓存
         evaluations = dict(val_map=results['mAP'], val_ap50=results['mAP_50'])
@@ -174,6 +180,7 @@ class OBBDetectionEvalPipelineDOTADevkit:
         device = runner.device
         if model is None:
             model = runner.model
+        was_training = model.training
         model.eval()
 
         valid_dataloader = runner.valid_dataloader
@@ -189,40 +196,45 @@ class OBBDetectionEvalPipelineDOTADevkit:
         # 每个类别的检测结果: dict[classname] = list of (img_name, score, poly_8)
         class_dets = {name: [] for name in cat_names}
 
-        with torch.no_grad():
-            for batch_datas in tqdm(valid_dataloader, desc='OBB DOTADevkit'):
-                batch_datas = to_device(batch_datas, device, non_blocking=True)
-                imgs, rboxes_list, labels_list, img_ids, raw_sizes = batch_datas
+        try:
+            with torch.no_grad():
+                for batch_datas in tqdm(valid_dataloader, desc='OBB DOTADevkit'):
+                    batch_datas = to_device(batch_datas, device, non_blocking=True)
+                    imgs, rboxes_list, labels_list, img_ids, raw_sizes = batch_datas
 
-                bs = imgs.shape[0]
-                if bs == 1:
-                    results = [model.infer(imgs)]
-                else:
-                    results = model.infer(imgs)
+                    bs = imgs.shape[0]
+                    if bs == 1:
+                        results = [model.infer(imgs)]
+                    else:
+                        results = model.infer(imgs)
 
-                for b in range(bs):
-                    boxes_np, scores_np, classes_np = results[b]
-                    if len(boxes_np) == 0:
-                        continue
+                    for b in range(bs):
+                        boxes_np, scores_np, classes_np = results[b]
+                        if len(boxes_np) == 0:
+                            continue
 
-                    # 映射回原始 patch 坐标
-                    boxes_orig = map_rboxes_to_origin_size(
-                        boxes_np, raw_sizes[b], img_size)
-                    # regularize 到 [0, π/2)
-                    boxes_t = torch.from_numpy(boxes_orig).float()
-                    boxes_t = regularize_rboxes(boxes_t).numpy()
+                        # 映射回原始 patch 坐标
+                        boxes_orig = map_rboxes_to_origin_size(
+                            boxes_np, raw_sizes[b], img_size)
+                        # regularize 到 [0, π/2)
+                        boxes_t = torch.from_numpy(boxes_orig).float()
+                        boxes_t = regularize_rboxes(boxes_t).numpy()
 
-                    # xywhr → 8 顶点 polygon
-                    corners = xywhr2xyxyxyxy(torch.from_numpy(boxes_t)).numpy()  # [N, 4, 2]
+                        # xywhr → 8 顶点 polygon
+                        corners = xywhr2xyxyxyxy(torch.from_numpy(boxes_t)).numpy()  # [N, 4, 2]
 
-                    img_name = img_ids[b]  # 如 "P0000__1024__2472___1648"
-                    for i in range(len(boxes_t)):
-                        cls_idx = int(classes_np[i])
-                        cls_name = cat_names[cls_idx]
-                        score = float(scores_np[i])
-                        poly = corners[i].reshape(-1)  # [8]: x1,y1,x2,y2,x3,y3,x4,y4
-                        poly_str = ' '.join(f'{c:.2f}' for c in poly)
-                        class_dets[cls_name].append(f'{img_name} {score:.4f} {poly_str}')
+                        img_name = img_ids[b]  # 如 "P0000__1024__2472___1648"
+                        for i in range(len(boxes_t)):
+                            cls_idx = int(classes_np[i])
+                            cls_name = cat_names[cls_idx]
+                            score = float(scores_np[i])
+                            poly = corners[i].reshape(-1)  # [8]: x1,y1,x2,y2,x3,y3,x4,y4
+                            poly_str = ' '.join(f'{c:.2f}' for c in poly)
+                            class_dets[cls_name].append(f'{img_name} {score:.4f} {poly_str}')
+        finally:
+            # ★★★ 关键修复: 评估结束后恢复训练模式
+            if was_training:
+                model.train()
 
         # 写入 detection 文件 (Task1_{classname}.txt 格式)
         for cls_name, dets in class_dets.items():

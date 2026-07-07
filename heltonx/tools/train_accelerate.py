@@ -214,7 +214,10 @@ class Trainer:
         # 这一步只是为了日志打印时正常显示totalloss, 而不是缩放后的totalloss
         if self.grad_accumulate:
             self.losses["total_loss"] = self.losses["total_loss"] * self.grad_accumulate
-            
+
+        # ★ 显存优化: 将 loss tensor detach 为纯数值, 尽早释放计算图引用
+        self.losses = {k: v.detach() if torch.is_tensor(v) else v for k, v in self.losses.items()}
+
         self.call_hooks("after_batch", runner=self)
 
 
@@ -226,16 +229,42 @@ class Trainer:
         """
         self.call_hooks("before_epoch", runner=self)
         self.model.train()
-        # 固定每个epoch的随机性:
-        # set_dataloader_epoch(self.train_dataloader, self.cur_epoch, self.seed)
+
+        # ★★★ 关键: epoch 级确定性 shuffle, 保证 resume 后数据顺序与不 resume 完全一致
+        # 原理: 将全局种子重置为 base_seed + epoch, 使 DataLoader 的 RandomSampler /
+        # DistributedSampler 在当前 epoch 产生与原始训练完全相同的 shuffle 顺序
+        seed_everything(self.seed + self.cur_epoch)
+        # 对 DistributedSampler 额外调用 set_epoch (DDP 下各进程必须同步 epoch)
+        self._set_dataloader_epoch(self.cur_epoch)
+
         for step, batch_datas in enumerate(self.train_dataloader):
             self.cur_step = step
             '''一个batch的训练'''
             self.fit_batch(batch_datas)
             # 一个batch结束后更新学习率
-            self.scheduler.step(epoch=self.cur_epoch, batch=step) 
+            self.scheduler.step(epoch=self.cur_epoch, batch=step)
+
+        # ★ 显存优化: 每个 epoch 结束后清理 CUDA 缓存, 缓解碎片化导致的显存持续增长
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         self.call_hooks("after_epoch", runner=self)
+
+    def _set_dataloader_epoch(self, epoch):
+        """设置 DataLoader 的 epoch, 保证 DDP 下 DistributedSampler 各进程同步 shuffle
+
+        accelerate.prepare() 会将 DataLoader 包装为 DataLoaderShard/DataLoaderDispatcher,
+        底层 sampler 可能不直接暴露 set_epoch, 此方法安全地尝试多种访问方式。
+        """
+        dl = self.train_dataloader
+        # 尝试1: accelerate DataLoaderShard 可能直接转发 set_epoch
+        if hasattr(dl, 'set_epoch'):
+            dl.set_epoch(epoch)
+            return
+        # 尝试2: 直接访问底层 sampler
+        sampler = getattr(dl, 'sampler', None) or getattr(getattr(dl, 'batch_sampler', None), 'sampler', None)
+        if sampler is not None and hasattr(sampler, 'set_epoch'):
+            sampler.set_epoch(epoch)
 
 
 

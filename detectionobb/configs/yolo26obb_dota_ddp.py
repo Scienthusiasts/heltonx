@@ -29,16 +29,16 @@ mode = 'train_ddp'
 seed = 42
 log_dir = rf'./log/yolo26{phi}_obb_dota_obb_train_ddp'
 img_size = [1024,1024]
-epoch = 12*4
+epoch = 100
 bs = 4
-lr = 1e-3
+lr = 2e-4
 warmup_decay = 1e-2
 warmup_epochs = 1
 lr_decay = 1e-1
 load_ckpt = None
 log_interval = 50
 eval_interval = 1
-resume = None
+resume = None # 'log/yolo26s_obb_dota_obb_train_ddp/2026-06-30-08-03-27_train_ddp/train_epoch84.pt'
 
 
 
@@ -116,8 +116,8 @@ dataset_cfgs = dict(
         img_size=img_size,
         mode='train',
         label_format=label_format,
-        mosaic_p=0.0,
-        mixup_p=0.0,
+        mosaic_p=0.5,
+        mixup_p=0.1,
         filter_no_obb=True,
     ),
     valid_dataset_cfg=dict(

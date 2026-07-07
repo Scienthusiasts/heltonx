@@ -185,7 +185,7 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=str, required=True, help='配置文件路径')
     parser.add_argument('--ckpt', type=str, default=None, help='权重文件路径 (覆盖config中的load_ckpt)')
     parser.add_argument('--thr', type=float, default=0.05, help='推理时的得分阈值')
-    parser.add_argument('--img', type=str, default='detectionobb/demo/dota1.0/P0903__1024__295___0.png', help='待推理图像路径')
+    parser.add_argument('--img', type=str, default='detectionobb/demo/dota1.0/P1235__1024__0___2976.png', help='待推理图像路径')
     parser.add_argument('--save', type=str, default='detobb_res.jpg', help='可视化结果保存路径')
     args = parser.parse_args()
 
@@ -218,4 +218,4 @@ if __name__ == '__main__':
                      img_size=img_size, show_text=True, score_thr=args.thr)
 
     # Usage:
-    # /mnt/yht/env/yht_pretrain/bin/python -m detectionobb.tools.test --config detectionobb/configs/yolo26obb_dota_ddp.py --ckpt log/yolo26s_obb_dota_obb_train_ddp/2026-06-29-14-00-45_train_ddp/last.pt
+    # /mnt/yht/env/yht_pretrain/bin/python -m detectionobb.tools.test --config detectionobb/configs/yolo26obb_dota_ddp.py --ckpt log/yolo26s_obb_dota_obb_train_ddp/2026-06-30-16-17-51_train_ddp/last.pt
